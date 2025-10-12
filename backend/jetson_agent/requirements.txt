@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+pydantic
+websockets
+python-dotenv
+pymavlink
+# For Ping sonar (optional now)
+# brping

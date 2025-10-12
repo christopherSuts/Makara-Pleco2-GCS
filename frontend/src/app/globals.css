@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+/* --- AMV theme tokens --- */
+:root{
+  --amv-black:   #000000; /* header/footer/sidebar */
+  --amv-grey:   #1e1e1e;
+  --amv-maroon: #a03e57; /* buttons / primary accents */
+  --amv-white:  #FFFFFF;
+}
+
+@theme inline {
+  --color-amv-black:   var(--amv-black);
+  --color-amv-grey:    var(--amv-grey);
+  --color-amv-maroon: var(--amv-maroon);
+  --color-amv-white:  var(--amv-white);
+}

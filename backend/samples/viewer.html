@@ -1,0 +1,117 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Mission Debug Viewer</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <style>
+    html,body,#map{height:100%;margin:0}
+    .panel{position:absolute;z-index:1000;background:#fff;padding:8px;border-radius:8px;top:10px;left:10px;box-shadow:0 2px 12px rgba(0,0,0,.15);font:14px system-ui}
+    .seq{background:#111;color:#fff;border-radius:10px;padding:2px 6px;font-size:12px}
+  </style>
+</head>
+<body>
+<div class="panel">
+  <div><b>Boundary JSON</b> <input type="file" id="fBoundary" accept=".json"/></div>
+  <div style="margin-top:6px;"><b>Mission JSON</b> <input type="file" id="fMission" accept=".json"/></div>
+  <div id="stats" style="margin-top:6px;color:#444"></div>
+</div>
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const map = L.map('map', { preferCanvas:true }).setView([0,0], 2);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  attribution:'© OpenStreetMap'
+}).addTo(map);
+
+let boundaryLayer, pathLayer, seqMarkers = [];
+
+function fitAll() {
+  const g = L.featureGroup([boundaryLayer, pathLayer].filter(Boolean));
+  if (g.getLayers().length) map.fitBounds(g.getBounds().pad(0.2));
+}
+
+function clearSeqMarkers() {
+  seqMarkers.forEach(m => map.removeLayer(m));
+  seqMarkers = [];
+}
+
+function drawBoundary(coords) {
+  if (boundaryLayer) map.removeLayer(boundaryLayer);
+  boundaryLayer = L.polygon(coords.map(([lng,lat])=>[lat,lng]), {
+    color:'#0a9396', weight:2, fillOpacity:0.08
+  }).addTo(map);
+}
+
+function drawMission(mission) {
+  if (pathLayer) map.removeLayer(pathLayer);
+  clearSeqMarkers();
+  const latlngs = mission.map(wp => [wp.lat, wp.lon]);
+  pathLayer = L.polyline(latlngs, { color:'#ee6c4d', weight:3 }).addTo(map);
+  // start & end flags
+  if (latlngs.length) {
+    L.circleMarker(latlngs[0],{radius:5,color:'#2a9d8f'}).addTo(map)
+      .bindTooltip('START', {permanent:true, direction:'top'});
+    L.circleMarker(latlngs.at(-1),{radius:5,color:'#9b2226'}).addTo(map)
+      .bindTooltip('END', {permanent:true, direction:'top'});
+  }
+  // numbered labels every N points (configurable)
+  const N = Math.max(1, Math.floor(latlngs.length/30)); // cap clutter
+  mission.forEach((wp,i)=>{
+    if (i % N === 0) {
+      const m = L.marker([wp.lat, wp.lon], {
+        icon: L.divIcon({className:'', html:`<span class="seq">${i}</span>`})
+      }).addTo(map);
+      seqMarkers.push(m);
+    }
+  });
+}
+
+function setStats(boundary, mission) {
+  const ll2m = (a,b) => {
+    const R=6371000, toRad = d=>d*Math.PI/180;
+    const dLat = toRad(b[0]-a[0]), dLon = toRad(b[1]-a[1]);
+    const lat1 = toRad(a[0]);
+    const x = dLon * Math.cos(lat1);
+    return Math.sqrt((dLat*R)**2 + (x*R)**2);
+  };
+  let lengthM = 0;
+  for (let i=1;i<(mission?.length||0);i++){
+    lengthM += ll2m([mission[i-1].lat, mission[i-1].lon], [mission[i].lat, mission[i].lon]);
+  }
+  const count = mission?.length||0;
+  const bCount = boundary?.length||0;
+  document.getElementById('stats').textContent =
+    `Boundary pts: ${bCount} | Waypoints: ${count} | Path length: ${lengthM.toFixed(1)} m`;
+}
+
+function handleFile(input, cb) {
+  const f = input.files?.[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try { cb(JSON.parse(r.result)); }
+    catch(e){ alert("Invalid JSON: "+e.message); }
+  };
+  r.readAsText(f);
+}
+
+document.getElementById('fBoundary').addEventListener('change', e=>{
+  handleFile(e.target, (j)=>{
+    if (!j.boundary) return alert('Expected {"boundary":[[lng,lat],...]}');
+    drawBoundary(j.boundary);
+    setStats(j.boundary, null);
+    fitAll();
+  });
+});
+document.getElementById('fMission').addEventListener('change', e=>{
+  handleFile(e.target, (j)=>{
+    if (!j.mission) return alert('Expected {"mission":[...]}');
+    drawMission(j.mission);
+    setStats(null, j.mission);
+    fitAll();
+  });
+});
+</script>
+</body>
+</html>
