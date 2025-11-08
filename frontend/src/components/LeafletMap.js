@@ -14,6 +14,18 @@ import {
   useMapEvents,
 } from "react-leaflet";
 
+const asvIcon = L.icon({
+  iconUrl: "/mapMarker/asv-icon.png",
+  iconSize: [50, 60],   
+  iconAnchor: [15, 15], 
+});
+
+const operatorIcon = L.icon({
+  iconUrl: "/mapMarker/operator-icon.png",
+  iconSize: [45, 70],   
+  iconAnchor: [15, 15], 
+});
+
 const customIcon = L.icon({
   iconUrl: "/mapMarker/marker-icon.png",
   shadowUrl: "/mapMarker/marker-shadow.png",
@@ -26,29 +38,83 @@ const customIcon = L.icon({
 const DEFAULT_COORDS = { lat: -6.144353601068162, lng: 106.88533858899994 };
 const zoomSize = 16;
 
-function SetMapToUserLocation({ setCoords }) {
+function AsvMarker({ parsedAsvPosition }) {
+  // Don't render if we don't have a valid, parsed position
+  if (!parsedAsvPosition) {
+    return null;
+  }
+
+  return (
+    <Marker position={parsedAsvPosition} icon={asvIcon}>
+      <Popup>
+        <b>ASV Location</b>
+        <br />
+        Lat: {parsedAsvPosition[0].toFixed(6)}
+        <br />
+        Lon: {parsedAsvPosition[1].toFixed(6)}
+      </Popup>
+    </Marker>
+  );
+}
+
+function GcsMarker({ gcsPosition }) {
+  // gcsPosition is passed from page.js and is [lat, lng] or null
+  if (!gcsPosition) {
+    return null;
+  }
+
+  return (
+    <Marker position={gcsPosition} icon={operatorIcon}>
+      <Popup>
+        <b>GCS Location</b>
+        <br />
+        Lat: {gcsPosition[0].toFixed(6)}
+        <br />
+        Lon: {gcsPosition[1].toFixed(6)}
+      </Popup>
+    </Marker>
+  );
+}
+
+function GcsLocationProvider({ onLocationUpdate, centerMode }) {
   const map = useMap();
 
   useEffect(() => {
     if (navigator.onLine && "geolocation" in navigator) {
       const watcher = navigator.geolocation.watchPosition(
         (position) => {
-          const lat = position.coords.latitude;
-          const lng = position.coords.longitude;
-          map.setView([lat, lng], zoomSize);
-          setCoords({ lat, lng });
+          const pos = [position.coords.latitude, position.coords.longitude];
+          
+          // 1. Report GCS position up to page.js
+          onLocationUpdate(pos);
+
+          // 2. Only center the map if the mode is 'gcs'
+          if (centerMode === 'gcs') {
+            map.setView(pos, map.getZoom() || zoomSize);
+          }
         },
-        () => {
-          map.setView([DEFAULT_COORDS.lat, DEFAULT_COORDS.lng], zoomSize);
-          setCoords(DEFAULT_COORDS);
-        }
+        (error) => {
+          console.error("Geolocation error:", error);
+          onLocationUpdate(null); // Report error
+        },
+        { enableHighAccuracy: true }
       );
+
       return () => navigator.geolocation.clearWatch(watcher);
-    } else {
-      map.setView([DEFAULT_COORDS.lat, DEFAULT_COORDS.lng], zoomSize);
-      setCoords(DEFAULT_COORDS);
     }
-  }, [map, setCoords]);
+  }, [map, onLocationUpdate, centerMode]); // Add centerMode to dependency array
+
+  return null; // This component doesn't render anything
+}
+
+function AsvCenteringController({ centerMode, parsedAsvPosition }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (centerMode === 'asv' && parsedAsvPosition) {
+      map.setView(parsedAsvPosition, map.getZoom() || zoomSize);
+    }
+  }, [map, centerMode, parsedAsvPosition]);
 
   return null;
 }
@@ -106,6 +172,10 @@ function hueAt(i, n) {
 }
 
 export default function LeafletMap({
+  asvPosition,
+  gcsPosition,      
+  setGcsPosition,
+  centerMode,
   pathCoords = [],
   recordedTrack = [],
   // boundaries
@@ -122,14 +192,51 @@ export default function LeafletMap({
   onBoundaryEndMovePoint,
 }) {
   const [userCoords, setUserCoords] = useState(DEFAULT_COORDS);
+  const [parsedAsvPosition, setParsedAsvPosition] = useState(null);
+
+  useEffect(() => {
+    if (asvPosition && asvPosition.payload) {
+      const lat = asvPosition.payload.lat;
+      const lon = asvPosition.payload.lon;
+
+      // Ignore (0,0) as it's an invalid "no-fix" location
+      if (lat === 0 && lon === 0) {
+        setParsedAsvPosition(null);
+      } else {
+        setParsedAsvPosition([lat, lon]);
+        console.log("Parsed ASV position:", parsedAsvPosition);
+      }
+    }
+  }, [asvPosition]);
 
   return (
     <div className="h-full w-full">
       <MapContainer
-        center={[DEFAULT_COORDS.lat, DEFAULT_COORDS.lng]} // safe initial center
+        center={DEFAULT_COORDS}
         zoom={zoomSize}
-        className="h-full w-full z-0"
+        style={{ height: "100%", width: "100%", zIndex: 0 }}
+        zoomControl={false}
       >
+        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+
+        <GcsLocationProvider 
+          onLocationUpdate={setGcsPosition}
+          centerMode={centerMode}
+        />
+        <MouseCoordinates />
+
+        <AsvCenteringController
+          centerMode={centerMode}
+          parsedAsvPosition={parsedAsvPosition}
+        />
+
+        <AsvMarker parsedAsvPosition={parsedAsvPosition} />
+        <GcsMarker gcsPosition={gcsPosition} />
+
+        {/* Default position marker */}
+        <Marker position={[userCoords.lat, userCoords.lng]} icon={customIcon}>
+          <Popup>GCS Location</Popup>
+        </Marker>
 
         {/* Rainbow perimeter track */}
         {Array.isArray(recordedTrack) && recordedTrack.length > 1 && (
@@ -158,16 +265,6 @@ export default function LeafletMap({
           onBoundaryAddPoint={onBoundaryAddPoint}
           onBoundaryPause={onBoundaryPause}
         />
-
-        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-
-        <SetMapToUserLocation setCoords={setUserCoords} />
-        <MouseCoordinates />
-
-        {/* GCS marker */}
-        <Marker position={[userCoords.lat, userCoords.lng]} icon={customIcon}>
-          <Popup>GCS Location</Popup>
-        </Marker>
 
         {/* Perimeter path */}
         {Array.isArray(pathCoords) && pathCoords.length > 1 && (

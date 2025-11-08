@@ -6,15 +6,48 @@ import PerimeterIsland from "@/components/features/PerimeterIsland";
 import { usePerimeter } from "@/components/features/usePerimeter";
 import { useBoundaries } from "@/components/features/useBoundaries";
 import { usePath } from "@/components/features/usePath";
+import { useState } from "react";
 import MapWrapper from "../components/MapWrapper";
+import { useTelemetry } from "@/components/features/useTelemetry";
+
+const CENTER_MODES = {
+  free: {
+    label: "Free",
+    // Icon (example using heroicons-style SVG)
+    icon: <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" /></svg>
+  },
+  gcs: {
+    label: "GCS",
+    // Icon (example)
+    icon: <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
+  },
+  asv: {
+    label: "ASV",
+    // Icon (example)
+    icon: <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="m12.75 15 3-3m0 0-3-3m3 3h-7.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
+  }
+};
 
 export default function HomePage() {
   const perimeter = usePerimeter();
   const boundaries = useBoundaries();
   const path = usePath();
+  const { telemetry, isConnected } = useTelemetry();
 
   const boundaryShown = boundaries.shownId !== null;
   const hasPerimeter = perimeter.perimeterPath.length > 0;
+
+  const [centerMode, setCenterMode] = useState('free');
+  const [gcsPosition, setGcsPosition] = useState(null);
+  const asvPosition = telemetry.GLOBAL_POSITION_INT;
+
+  const cycleCenterMode = () => {
+    setCenterMode(prev => {
+      if (prev === 'free') return 'gcs';
+      if (prev === 'gcs') return 'asv';
+      return 'free';
+    });
+  };
 
   return (
     <div className="h-screen flex flex-col bg-amv-black text-amv-white">
@@ -86,6 +119,11 @@ export default function HomePage() {
             <div className="flex-1 bg-amv-white border border-amv-maroon/30 rounded-md p-2 relative shadow-sm">
               <div className="absolute inset-0 z-0 rounded-md overflow-hidden">
                 <MapWrapper 
+                  asvPosition={asvPosition}
+                  gcsPosition={gcsPosition}
+                  setGcsPosition={setGcsPosition} // Give the map a way to tell the GCS location
+                  centerMode={centerMode}
+
                   pathCoords={perimeter.perimeterPath}
                   recordedTrack={perimeter.recordedTrack} 
                   missionPath={path.line}
@@ -206,12 +244,15 @@ export default function HomePage() {
             {/* Log / Console */}
             <div className="flex-1 text-amv-black bg-amv-white border border-amv-maroon/30 rounded-md p-2 shadow-sm">
               <div className="h-20 overflow-y-scroll text-xs">Log view</div>
-              <div className="mt-2 flex items-center space-x-2">
-                <label className="flex items-center gap-2">
-                  <input type="checkbox" className="accent-amv-plum" /> <span>Center</span>
-                </label>
-                <span>MODE: ...</span>
-              </div>
+              <div>Map Center Mode:</div>
+              <button
+                onClick={cycleCenterMode}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg shadow-lg bg-amv-grey text-amv-white border border-amv-white/10 hover:bg-amv-plum transition-colors"
+                title={`Map Center Mode: ${CENTER_MODES[centerMode].label}`}
+              >
+                {CENTER_MODES[centerMode].icon}
+                <span className="font-semibold text-sm">{CENTER_MODES[centerMode].label}</span>
+              </button>
             </div>
 
             {/* Action Buttons */}

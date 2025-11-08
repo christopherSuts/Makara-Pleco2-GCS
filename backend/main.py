@@ -12,7 +12,7 @@ from pymavlink import mavutil
 
 # CONFIG - edit if your MAVProxy uses a different bind/port
 MAVLINK_BIND = "0.0.0.0"   # listen on all interfaces
-MAVLINK_PORT = 14551       # match MAVProxy broadcast port
+MAVLINK_PORT = 14556       # match MAVProxy broadcast port
 WS_HOST = "0.0.0.0"
 WS_PORT = 9000
 
