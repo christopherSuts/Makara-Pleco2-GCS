@@ -1,0 +1,2 @@
+- integrate perimeter dengan pergerakan riil
+- generate jalur based on boundary
