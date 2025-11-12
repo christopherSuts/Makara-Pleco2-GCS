@@ -32,8 +32,8 @@ export function useTelemetry() {
             ...prev,
             [message.type]: message,
           }));
-        } catch (error) {
-          console.error("Failed to parse WebSocket message:", error);
+        } catch (err) {
+          console.error("RAW WS:", String(event.data));
         }
       };
 

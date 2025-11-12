@@ -204,7 +204,7 @@ export default function LeafletMap({
         setParsedAsvPosition(null);
       } else {
         setParsedAsvPosition([lat, lon]);
-        console.log("Parsed ASV position:", parsedAsvPosition);
+        // console.log("Parsed ASV position:", parsedAsvPosition);
       }
     }
   }, [asvPosition]);

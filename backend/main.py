@@ -1,5 +1,5 @@
 # main.py
-import asyncio
+import asyncio, math
 import json
 import functools  # <--- CHANGED
 from datetime import datetime
@@ -12,7 +12,7 @@ from pymavlink import mavutil
 
 # CONFIG - edit if your MAVProxy uses a different bind/port
 MAVLINK_BIND = "0.0.0.0"   # listen on all interfaces
-MAVLINK_PORT = 14556       # match MAVProxy broadcast port
+MAVLINK_PORT = 14555       # match MAVProxy broadcast port
 WS_HOST = "0.0.0.0"
 WS_PORT = 9000
 
@@ -24,10 +24,22 @@ latest_messages: Dict[str, Dict[str, Any]] = {}
 last_gps: Optional[Dict[str, float]] = None
 last_att: Optional[Dict[str, float]] = None
 
+# JSON_LOG_FILE = datetime.utcnow().strftime("telemetry-%Y%m%d.ndjson")
+JSON_LOG_FILE = None
+
 # Global handles so we can close them on shutdown
 _mav = None
 _reader_task: Optional[asyncio.Task] = None
 
+def _sanitize_numbers(x):
+    """Recursively replace NaN/Inf with None so JSON is always valid."""
+    if isinstance(x, float):
+        return x if math.isfinite(x) else None
+    if isinstance(x, dict):
+        return {k: _sanitize_numbers(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [_sanitize_numbers(v) for v in x]
+    return x
 
 def now_ts() -> str:
     return datetime.utcnow().isoformat() + "Z"
@@ -67,8 +79,10 @@ def to_json_msg(msg) -> Dict[str, Any]:
             base["payload"] = d
     except Exception as e:
         base["payload"] = {"error": str(e)}
-    return base
 
+    # <-- ensure no NaN/Inf ever leaves this function
+    base["payload"] = _sanitize_numbers(base["payload"])
+    return base
 
 async def broadcast(msg_json: str):
     to_remove = []
@@ -120,6 +134,14 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
             j = to_json_msg(msg)
             latest_messages[j["type"]] = {"server_ts": j["server_ts"], "payload": j["payload"]}
             text = json.dumps(j, default=str)
+
+            if JSON_LOG_FILE:
+                try:
+                    with open(JSON_LOG_FILE, "a", encoding="utf-8") as f:
+                        f.write(text + "\n")  # NDJSON: one JSON object per line
+                except Exception as e:
+                    print("JSON log write error:", e)
+
             # broadcast to websockets
             await broadcast(text)
 

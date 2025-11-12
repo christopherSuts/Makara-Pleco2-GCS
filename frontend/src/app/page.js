@@ -29,17 +29,21 @@ const CENTER_MODES = {
 };
 
 export default function HomePage() {
-  const perimeter = usePerimeter();
+  const { telemetry, isConnected } = useTelemetry();
+  const asvPosition = telemetry.GLOBAL_POSITION_INT;
+  const perimeter = usePerimeter(asvPosition);
   const boundaries = useBoundaries();
   const path = usePath();
-  const { telemetry, isConnected } = useTelemetry();
+  
 
   const boundaryShown = boundaries.shownId !== null;
-  const hasPerimeter = perimeter.perimeterPath.length > 0;
+  const hasPerimeter =
+     (perimeter.finalRecordedTrack?.length ?? 0) > 0 ||
+      !!perimeter.loadedPerimeterMeta;
 
   const [centerMode, setCenterMode] = useState('free');
   const [gcsPosition, setGcsPosition] = useState(null);
-  const asvPosition = telemetry.GLOBAL_POSITION_INT;
+  
 
   const cycleCenterMode = () => {
     setCenterMode(prev => {
@@ -65,8 +69,8 @@ export default function HomePage() {
             menuTitle="Perimeter"
             menu={[
               { label: "Record Perimeter", onClick: perimeter.start, disabled: perimeter.isRecording },
-              { label: "Show Saved Perimeters", onClick: perimeter.openLoad },
-              { label: "Clear Perimeters", onClick: perimeter.dontSaveOrClear, disabled: !hasPerimeter },
+              { label: "Show Saved Perimeters", onClick: perimeter.openLoad, },
+              { label: "Clear Perimeters", onClick: () => perimeter.dontSaveOrClear({ clearSaved: true }), disabled: !hasPerimeter },
             ]}
           >Per</SidebarButton>
 
@@ -124,7 +128,7 @@ export default function HomePage() {
                   setGcsPosition={setGcsPosition} // Give the map a way to tell the GCS location
                   centerMode={centerMode}
 
-                  pathCoords={perimeter.perimeterPath}
+                  pathCoords={perimeter.finalRecordedTrack}
                   recordedTrack={perimeter.recordedTrack} 
                   missionPath={path.line}
                   // boundaries
