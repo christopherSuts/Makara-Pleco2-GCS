@@ -25,7 +25,6 @@ export function usePerimeter(asvPosition) {
     const [showStopModal, setShowStopModal] = useState(false);
 
     const [recordedTrack, setRecordedTrack] = useState([]);
-    const [finalRecordedTrack, setFinalRecordedTrack] = useState([]);
     const [showLoadModal, setShowLoadModal] = useState(false);
     const [loadedPerimeterMeta, setLoadedPerimeterMeta] = useState(null);
 
@@ -46,7 +45,7 @@ export function usePerimeter(asvPosition) {
             alert("File loaded, but it doesn't have enough points.");
             return;
         }
-        setFinalRecordedTrack(normalized);
+        setRecordedTrack(normalized);
         setLoadedPerimeterMeta({
             name: obj.name || "Imported perimeter",
             count: normalized.length,
@@ -115,7 +114,7 @@ export function usePerimeter(asvPosition) {
         setRecordedTrack([]);
         setShowStopModal(false);
         if (clearSaved) {
-            setFinalRecordedTrack([]);
+            setRecordedTrack([]);
             setLoadedPerimeterMeta(null);
         }
     }, []);
@@ -126,12 +125,11 @@ export function usePerimeter(asvPosition) {
             return;
         }
 
-        setFinalRecordedTrack(recordedTrack);
         const payload = {
             type: "asv-perimeter-track",
-            startedAt: finalRecordedTrack[0]?.t ?? Date.now(),
-            endedAt: finalRecordedTrack.at(-1)?.t ?? Date.now(),
-            points: finalRecordedTrack, // [{lat,lng,t}]
+            startedAt: recordedTrack[0]?.t ?? Date.now(),
+            endedAt: recordedTrack.at(-1)?.t ?? Date.now(),
+            points: recordedTrack, // [{lat,lng,t}]
         };
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
         const url = URL.createObjectURL(blob);
@@ -161,6 +159,6 @@ export function usePerimeter(asvPosition) {
         recordedTrack, setRecordedTrack,
         addTelemetryPoint, // future real ASV hook
         showLoadModal, openLoad, closeLoad, importPerimeterJSON,
-        finalRecordedTrack, loadedPerimeterMeta,
+        loadedPerimeterMeta,
     };
 }

@@ -38,7 +38,7 @@ export default function HomePage() {
 
   const boundaryShown = boundaries.shownId !== null;
   const hasPerimeter =
-     (perimeter.finalRecordedTrack?.length ?? 0) > 0 ||
+     (perimeter.recordedTrack?.length ?? 0) > 0 ||
       !!perimeter.loadedPerimeterMeta;
 
   const [centerMode, setCenterMode] = useState('free');
@@ -128,7 +128,7 @@ export default function HomePage() {
                   setGcsPosition={setGcsPosition} // Give the map a way to tell the GCS location
                   centerMode={centerMode}
 
-                  pathCoords={perimeter.finalRecordedTrack}
+                  pathCoords={perimeter.recordedTrack}
                   recordedTrack={perimeter.recordedTrack} 
                   missionPath={path.line}
                   // boundaries
