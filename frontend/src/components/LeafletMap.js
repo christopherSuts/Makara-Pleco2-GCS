@@ -183,6 +183,7 @@ export default function LeafletMap({
   isBoundarySession = false,
   isBoundaryAdding = false,
   boundaryPoints = [],
+  shownBoundaryPoints = [],  
   movingDotId = null,
   onBoundaryAddPoint,
   onBoundaryPause, // called on right-click
@@ -290,7 +291,7 @@ export default function LeafletMap({
         {/* Boundary polygon */}
         {boundaryPoints.length >= 3 && (
           <Polygon
-            positions={boundaryPoints
+            positions={[...boundaryPoints] 
               .sort((a, b) => a.seq - b.seq)
               .map((p) => [p.lat, p.lng])}
             pathOptions={{
@@ -298,6 +299,19 @@ export default function LeafletMap({
               weight: 2,
               fillColor: "#6B0F2B",
               fillOpacity: 0.25,
+            }}
+          />
+        )}
+
+        {/* Boundary polygon (SAVED/SHOWN) */}
+        {Array.isArray(shownBoundaryPoints) && shownBoundaryPoints.length >= 3 && (
+          <Polygon
+            positions={shownBoundaryPoints.map((p) => [p.lat, p.lng])}
+            pathOptions={{
+              color: "#2563eb",        // visually distinct from live edit
+              weight: 2,
+              fillColor: "#2563eb",
+              fillOpacity: 0.15,
             }}
           />
         )}

@@ -1,7 +1,8 @@
 "use client";
 import SidebarButton from "@/components/ui/SidebarButton";
 import ConfirmModal from "@/components/ui/ConfirmModal";
-import LoadFileModal from "@/components/ui/LoadPerimeterModal";
+import LoadPerimeterModal from "@/components/ui/LoadPerimeterModal";
+import LoadBoundaryModal from "@/components/ui/LoadBoundaryModal";
 import PerimeterIsland from "@/components/features/PerimeterIsland";
 import { usePerimeter } from "@/components/features/usePerimeter";
 import { useBoundaries } from "@/components/features/useBoundaries";
@@ -79,7 +80,7 @@ export default function HomePage() {
             menuTitle="Boundaries"
             menu={[
               { label: "Create Boundaries", onClick: boundaries.start },
-              { label: "Show Saved Boundaries", onClick: boundaries.showSaved },
+              { label: "Show Saved Boundaries", onClick: boundaries.openLoad },
               { label: "Clear Shown Boundaries", onClick: boundaries.clearShown, disabled: !boundaryShown },
             ]}
           >B</SidebarButton>
@@ -135,6 +136,7 @@ export default function HomePage() {
                   isBoundarySession={boundaries.isSession}
                   isBoundaryAdding={boundaries.isAdding}
                   boundaryPoints={boundaries.points}
+                  shownBoundaryPoints={boundaries.shownPoints}
                   movingDotId={boundaries.movingId}
                   onBoundaryAddPoint={boundaries.addPoint}
                   onBoundaryPause={boundaries.pauseAdd}
@@ -303,12 +305,17 @@ export default function HomePage() {
           )}
 
           {perimeter.showLoadModal && (
-            <LoadFileModal
+            <LoadPerimeterModal
               open
               onClose={perimeter.closeLoad}
               onImport={perimeter.importPerimeterJSON}
             />
           )}
+          <LoadBoundaryModal
+            open={boundaries.showLoadModal}
+            onClose={boundaries.closeLoad}
+            onImport={boundaries.importBoundaryJSON}
+          />
         </main>
       </div>
     </div>
