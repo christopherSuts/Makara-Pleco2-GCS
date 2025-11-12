@@ -3,6 +3,7 @@ import SidebarButton from "@/components/ui/SidebarButton";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import LoadPerimeterModal from "@/components/ui/LoadPerimeterModal";
 import LoadBoundaryModal from "@/components/ui/LoadBoundaryModal";
+import PathParamsModal from "@/components/ui/PathParamsModal"; 
 import PerimeterIsland from "@/components/features/PerimeterIsland";
 import { usePerimeter } from "@/components/features/usePerimeter";
 import { useBoundaries } from "@/components/features/useBoundaries";
@@ -35,16 +36,18 @@ export default function HomePage() {
   const perimeter = usePerimeter(asvPosition);
   const boundaries = useBoundaries();
   const path = usePath();
-  
 
+  const [pathParamsOpen, setPathParamsOpen] = useState(false);
+  const [pendingOrientation, setPendingOrientation] = useState("TB");
+  
   const boundaryShown = boundaries.shownId !== null;
   const hasPerimeter =
-     (perimeter.recordedTrack?.length ?? 0) > 0 ||
-      !!perimeter.loadedPerimeterMeta;
+    (perimeter.recordedTrack?.length ?? 0) > 0 ||
+    !!perimeter.loadedPerimeterMeta;
 
   const [centerMode, setCenterMode] = useState('free');
   const [gcsPosition, setGcsPosition] = useState(null);
-  
+
 
   const cycleCenterMode = () => {
     setCenterMode(prev => {
@@ -89,12 +92,26 @@ export default function HomePage() {
             label="Path"
             menuTitle="Path"
             menu={[
-              { label: "Generate: Top → Bottom", onClick: () => path.generate("TB", boundaries.points) },
-              { label: "Generate: Bottom → Top", onClick: () => path.generate("BT", boundaries.points) },
-              { label: "Generate: Right → Left", onClick: () => path.generate("RL", boundaries.points) },
-              { label: "Generate: Left → Right", onClick: () => path.generate("LR", boundaries.points) },
+              // { label: "Generate: Top → Bottom", onClick: () => path.generate("TB", boundaries.points) },
+              // { label: "Generate: Bottom → Top", onClick: () => path.generate("BT", boundaries.points) },
+              // { label: "Generate: Right → Left", onClick: () => path.generate("RL", boundaries.points) },
+              // { label: "Generate: Left → Right", onClick: () => path.generate("LR", boundaries.points) },
+              // { label: "Load Saved Path", onClick: path.load },
+              // { label: "Save Current Path", onClick: path.save, disabled: !path.hasPath },
+
+              { label: "Generate: Top → Bottom", onClick: () => { setPendingOrientation("TB"); setPathParamsOpen(true); }},
+              { label: "Generate: Bottom → Top", onClick: () => { setPendingOrientation("BT"); setPathParamsOpen(true); }},
+              { label: "Generate: Right → Left", onClick: () => { setPendingOrientation("RL"); setPathParamsOpen(true); }},
+              { label: "Generate: Left → Right", onClick: () => { setPendingOrientation("LR"); setPathParamsOpen(true); }},
               { label: "Load Saved Path", onClick: path.load },
-              { label: "Save Current Path", onClick: path.save, disabled: !path.hasPath },
+              {
+                label: "Save Current Path",
+                onClick: () => {
+                  const b = boundaries.saved?.find(x => x.id === boundaries.shownId);
+                  path.save({ name: undefined, boundary: b || { points: boundaries.shownPoints } });
+                },
+                disabled: !path.hasPath
+              },
               { label: "Clear Shown Path", onClick: path.clear, disabled: !path.hasPath },
             ]}
           >Path</SidebarButton>
@@ -123,14 +140,14 @@ export default function HomePage() {
             {/* Map Card */}
             <div className="flex-1 bg-amv-white border border-amv-maroon/30 rounded-md p-2 relative shadow-sm">
               <div className="absolute inset-0 z-0 rounded-md overflow-hidden">
-                <MapWrapper 
+                <MapWrapper
                   asvPosition={asvPosition}
                   gcsPosition={gcsPosition}
                   setGcsPosition={setGcsPosition} // Give the map a way to tell the GCS location
                   centerMode={centerMode}
 
                   pathCoords={perimeter.recordedTrack}
-                  recordedTrack={perimeter.recordedTrack} 
+                  recordedTrack={perimeter.recordedTrack}
                   missionPath={path.line}
                   // boundaries
                   isBoundarySession={boundaries.isSession}
@@ -315,6 +332,21 @@ export default function HomePage() {
             open={boundaries.showLoadModal}
             onClose={boundaries.closeLoad}
             onImport={boundaries.importBoundaryJSON}
+          />
+          <PathParamsModal
+            open={pathParamsOpen}
+            onClose={() => setPathParamsOpen(false)}
+            defaults={path.lastParams}
+            onSubmit={(rowGapMeters, wpGapMeters) => {
+              const b = boundaries.saved?.find(x => x.id === boundaries.shownId);
+              path.generate({
+                orientation: pendingOrientation,
+                rowGapMeters,
+                wpGapMeters,
+                boundary: b || { points: boundaries.shownPoints },
+              });
+              setPathParamsOpen(false);
+            }}
           />
         </main>
       </div>
