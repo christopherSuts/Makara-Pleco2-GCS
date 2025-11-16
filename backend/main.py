@@ -31,6 +31,20 @@ JSON_LOG_FILE = None
 _mav = None
 _reader_task: Optional[asyncio.Task] = None
 
+def _now():
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
+def wslog(level: str, msg: str):
+    """Fire-and-forget: broadcast a log line to all WS clients."""
+    try:
+        data = {"type": "WS_LOG", "payload": {"ts": _now(), "level": str(level), "msg": str(msg)}}
+        text = json.dumps(data, ensure_ascii=False)
+        # broadcast is async; schedule without blocking
+        asyncio.get_event_loop().create_task(broadcast(text))
+    except Exception as e:
+        print("WS_LOG error:", e)
+
 def send_set_home(lat: float = 0.0, lon: float = 0.0, alt: float = 0.0, use_current: bool = False):
     """
     Send MAV_CMD_DO_SET_HOME (179).
@@ -38,10 +52,12 @@ def send_set_home(lat: float = 0.0, lon: float = 0.0, alt: float = 0.0, use_curr
     """
     if _mav is None:
         print("SET_HOME ignored: no MAVLink connection")
+        wslog("warn", "SET_HOME ignored: no MAVLink connection")
         return
     try:
         # CMD_LONG: target_system, target_component, command, confirmation, param1..param7
         # param1 = use_current (1) or specified (0)
+        wslog("info", f"SET_HOME sending use_current={use_current} lat={lat:.7f} lon={lon:.7f} alt={alt:.2f}")
         _mav.mav.command_long_send(
             _mav.target_system or 1,
             _mav.target_component or 1,
@@ -54,8 +70,10 @@ def send_set_home(lat: float = 0.0, lon: float = 0.0, alt: float = 0.0, use_curr
             float(alt)                    # param7 (z) altitude (AMSL or rel depending on FW)
         )
         print(f"SET_HOME sent (use_current={use_current}, lat={lat}, lon={lon}, alt={alt})")
+        wslog("info", "SET_HOME command_long_send dispatched")
     except Exception as e:
         print("SET_HOME error:", e)
+        wslog("error", f"SET_HOME send error: {e}")
 
 def _sanitize_numbers(x):
     """Recursively replace NaN/Inf with None so JSON is always valid."""
@@ -172,6 +190,7 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
                         5: "IN_PROGRESS",
                     }
                     print(f"[SET_HOME][ACK] result={result_names.get(res, res)}")
+                    wslog("info", f"SET_HOME ACK: {result_names.get(res,res)}")
 
                     # Optional: tell all connected web clients so you can show a toast in the UI
                     ack_msg = {
@@ -240,6 +259,7 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
     clients.add(ws)
+    wslog("info", f"WebSocket client connected: {ws.client}")
     print("WebSocket client connected:", ws.client)
     try:
         while True:
@@ -262,6 +282,7 @@ async def websocket_endpoint(ws: WebSocket):
             # No-op; we don't broadcast inbound text back
     except WebSocketDisconnect:
         clients.discard(ws)
+        wslog("info", f"WebSocket client disconnected: {ws.client}")
         print("WebSocket client disconnected")
 
 @app.get("/snapshot")

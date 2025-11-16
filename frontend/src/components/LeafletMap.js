@@ -15,21 +15,21 @@ import {
 } from "react-leaflet";
 
 const homeIcon = L.icon({
-  iconUrl: "/mapMarker/home-icon.png",
+  iconUrl: "/mapMarker/home-icon.png",  
   iconSize: [36, 36],
   iconAnchor: [18, 18],
 });
 
 const asvIcon = L.icon({
   iconUrl: "/mapMarker/asv-icon.png",
-  iconSize: [50, 60],
-  iconAnchor: [15, 15],
+  iconSize: [50, 60],   
+  iconAnchor: [15, 15], 
 });
 
 const operatorIcon = L.icon({
   iconUrl: "/mapMarker/operator-icon.png",
-  iconSize: [45, 70],
-  iconAnchor: [15, 15],
+  iconSize: [45, 70],   
+  iconAnchor: [15, 15], 
 });
 
 const customIcon = L.icon({
@@ -90,12 +90,12 @@ function GcsLocationProvider({ onLocationUpdate, centerMode }) {
       const watcher = navigator.geolocation.watchPosition(
         (position) => {
           const pos = [position.coords.latitude, position.coords.longitude];
-
+          
           // 1. Report GCS position up to page.js
           onLocationUpdate(pos);
 
           // 2. Only center the map if the mode is 'gcs'
-          if (centerMode === "gcs") {
+          if (centerMode === 'gcs') {
             map.setView(pos, map.getZoom() || zoomSize);
           }
         },
@@ -117,7 +117,7 @@ function AsvCenteringController({ centerMode, parsedAsvPosition }) {
   const map = useMap();
 
   useEffect(() => {
-    if (centerMode === "asv" && parsedAsvPosition) {
+    if (centerMode === 'asv' && parsedAsvPosition) {
       map.setView(parsedAsvPosition, map.getZoom() || zoomSize);
     }
   }, [map, centerMode, parsedAsvPosition]);
@@ -183,7 +183,7 @@ function hueAt(i, n) {
 
 export default function LeafletMap({
   asvPosition,
-  gcsPosition,
+  gcsPosition,      
   setGcsPosition,
   centerMode,
   pathCoords = [],
@@ -193,7 +193,7 @@ export default function LeafletMap({
   isBoundarySession = false,
   isBoundaryAdding = false,
   boundaryPoints = [],
-  shownBoundaryPoints = [],
+  shownBoundaryPoints = [],  
   movingDotId = null,
   onBoundaryAddPoint,
   onBoundaryPause, // called on right-click
@@ -233,7 +233,7 @@ export default function LeafletMap({
       >
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
-        <GcsLocationProvider
+        <GcsLocationProvider 
           onLocationUpdate={setGcsPosition}
           centerMode={centerMode}
         />
@@ -260,10 +260,7 @@ export default function LeafletMap({
               return (
                 <Polyline
                   key={`trk-${i}`}
-                  positions={[
-                    [pt.lat, pt.lng],
-                    [next.lat, next.lng],
-                  ]}
+                  positions={[[pt.lat, pt.lng], [next.lat, next.lng]]}
                   pathOptions={{
                     color: hueAt(i, recordedTrack.length - 1),
                     weight: 5,
@@ -284,20 +281,7 @@ export default function LeafletMap({
           homePickMode={homePickMode}
           onHomePick={onHomePick}
         />
-
-        {/* HOME marker */}
-        {homePoint && (
-          <Marker position={[homePoint.lat, homePoint.lng]} icon={homeIcon}>
-            <Popup>
-              <b>HOME</b>
-              <br />
-              Lat: {homePoint.lat.toFixed(6)}
-              <br />
-              Lon: {homePoint.lng.toFixed(6)}
-            </Popup>
-          </Marker>
-        )}
-
+  
         {/* Perimeter path */}
         {Array.isArray(pathCoords) && pathCoords.length > 1 && (
           <Polyline
@@ -322,7 +306,7 @@ export default function LeafletMap({
         {/* Boundary polygon */}
         {boundaryPoints.length >= 3 && (
           <Polygon
-            positions={[...boundaryPoints]
+            positions={[...boundaryPoints] 
               .sort((a, b) => a.seq - b.seq)
               .map((p) => [p.lat, p.lng])}
             pathOptions={{
@@ -335,18 +319,17 @@ export default function LeafletMap({
         )}
 
         {/* Boundary polygon (SAVED/SHOWN) */}
-        {Array.isArray(shownBoundaryPoints) &&
-          shownBoundaryPoints.length >= 3 && (
-            <Polygon
-              positions={shownBoundaryPoints.map((p) => [p.lat, p.lng])}
-              pathOptions={{
-                color: "#2563eb", // visually distinct from live edit
-                weight: 2,
-                fillColor: "#2563eb",
-                fillOpacity: 0.15,
-              }}
-            />
-          )}
+        {Array.isArray(shownBoundaryPoints) && shownBoundaryPoints.length >= 3 && (
+          <Polygon
+            positions={shownBoundaryPoints.map((p) => [p.lat, p.lng])}
+            pathOptions={{
+              color: "#2563eb",        // visually distinct from live edit
+              weight: 2,
+              fillColor: "#2563eb",
+              fillOpacity: 0.15,
+            }}
+          />
+        )}
 
         {/* Boundary dots */}
         {boundaryPoints

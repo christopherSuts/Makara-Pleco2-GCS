@@ -1,80 +1,20 @@
 "use client";
 import SidebarButton from "@/components/ui/SidebarButton";
+import YawPitchRollPanel from "@/components/YawPitchRollPanel";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import LoadPerimeterModal from "@/components/ui/LoadPerimeterModal";
 import LoadBoundaryModal from "@/components/ui/LoadBoundaryModal";
 import LoadPathModal from "@/components/ui/LoadPathModal";
 import PathParamsModal from "@/components/ui/PathParamsModal";
 import PerimeterIsland from "@/components/features/PerimeterIsland";
+import LogPanel from "@/components/LogPanel";
 import { usePerimeter } from "@/components/features/usePerimeter";
 import { useBoundaries } from "@/components/features/useBoundaries";
 import { usePath } from "@/components/features/usePath";
 import { useState } from "react";
 import MapWrapper from "../components/MapWrapper";
+import CenterModeToggle from "@/components/CenterModeToggle";
 import { useTelemetry } from "@/components/features/useTelemetry";
-
-const CENTER_MODES = {
-  free: {
-    label: "Free",
-    // Icon (example using heroicons-style SVG)
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        fill="none"
-        viewBox="0 0 24 24"
-        strokeWidth={2}
-        stroke="currentColor"
-        className="w-5 h-5"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15"
-        />
-      </svg>
-    ),
-  },
-  gcs: {
-    label: "GCS",
-    // Icon (example)
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        fill="none"
-        viewBox="0 0 24 24"
-        strokeWidth={2}
-        stroke="currentColor"
-        className="w-5 h-5"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
-        />
-      </svg>
-    ),
-  },
-  asv: {
-    label: "ASV",
-    // Icon (example)
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        fill="none"
-        viewBox="0 0 24 24"
-        strokeWidth={2}
-        stroke="currentColor"
-        className="w-5 h-5"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d="m12.75 15 3-3m0 0-3-3m3 3h-7.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
-        />
-      </svg>
-    ),
-  },
-};
 
 export default function HomePage() {
   const { telemetry, isConnected, send } = useTelemetry();
@@ -281,6 +221,9 @@ export default function HomePage() {
             {/* Map Card */}
             <div className="flex-1 bg-amv-white border border-amv-maroon/30 rounded-md p-2 relative shadow-sm">
               <div className="absolute inset-0 z-0 rounded-md overflow-hidden">
+                <div className="absolute top-2 left-2 z-[1000]">
+                  <CenterModeToggle centerMode={centerMode} setCenterMode={setCenterMode} />
+                </div>
                 <MapWrapper
                   asvPosition={asvPosition}
                   gcsPosition={gcsPosition}
@@ -354,59 +297,7 @@ export default function HomePage() {
                 </div>
               )}
 
-              {/* GPS Info */}
-              <div className="absolute top-2 right-2 bg-amv-white text-amv-black border border-amv-maroon/40 rounded px-2 py-1 text-xs backdrop-blur">
-                Sat: ... Fix: ...
-              </div>
-
-              {/* Indicator Panel */}
-              <div className="absolute top-16 right-2 grid grid-cols-2 gap-2">
-                {/* Roll */}
-                <div className="flex flex-col items-center">
-                  <div className="w-16 h-16 bg-amv-white border border-amv-maroon/40 rounded-full flex items-center justify-center">
-                    <div className="w-6 h-6 bg-amv-plum rounded-full" />
-                  </div>
-                  <div className="mt-1 bg-amv-black text-amv-white text-xs px-2 py-0.5 rounded">
-                    R: -1.8
-                  </div>
-                </div>
-
-                {/* Heading */}
-                <div className="flex flex-col items-center">
-                  <div className="w-16 h-16 bg-amv-black border border-amv-maroon/40 rounded-full flex items-center justify-center">
-                    <div className="w-7 h-7">
-                      <img src="/imuIndicator/yaw.png" />
-                    </div>
-                  </div>
-                  <div className="mt-1 bg-amv-black text-amv-white text-[10px] px-2 py-0.5 rounded leading-tight text-center">
-                    H: -148.0
-                    <br />
-                    C: -132.0
-                  </div>
-                </div>
-
-                {/* Pitch */}
-                <div className="flex flex-col items-center">
-                  <div className="w-16 h-16 bg-amv-white border border-amv-maroon/40 rounded-full flex items-center justify-center">
-                    <div className="w-8 h-4 bg-amv-plum rounded" />
-                  </div>
-                  <div className="mt-1 bg-amv-black text-amv-white text-xs px-2 py-0.5 rounded">
-                    P: 2.3
-                  </div>
-                </div>
-
-                {/* Left/Right Thruster */}
-                <div className="flex flex-col items-center">
-                  <div className="w-16 h-16 bg-amv-white border border-amv-maroon/40 rounded-full flex items-center justify-center">
-                    <div className="w-3 h-3 bg-amv-black rounded-full" />
-                  </div>
-                  <div className="mt-1 bg-amv-black text-amv-white text-[10px] px-2 py-0.5 rounded leading-tight text-center">
-                    L: +0.2
-                    <br />
-                    R: +0.0
-                  </div>
-                </div>
-              </div>
+              <YawPitchRollPanel telemetry={telemetry}/>
             </div>
 
             {/* Status Box */}
@@ -423,19 +314,22 @@ export default function HomePage() {
           {/* Bottom Controls */}
           <div className="flex mt-2 space-x-2">
             {/* Log / Console */}
-            <div className="flex-1 text-amv-black bg-amv-white border border-amv-maroon/30 rounded-md p-2 shadow-sm">
-              <div className="h-20 overflow-y-scroll text-xs">Log view</div>
-              <div>Map Center Mode:</div>
+            <div className="flex-1 min-h-0 text-amv-black bg-amv-white border border-amv-maroon/30 rounded-md p-2 shadow-sm">
+              <div className="mt-0.5">
+                <LogPanel telemetry={telemetry} />
+              </div>
+              {/* <div className="text-sm font-semibold mb-1 mt-1">Map Center mode</div>
               <button
                 onClick={cycleCenterMode}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg shadow-lg bg-amv-grey text-amv-white border border-amv-white/10 hover:bg-amv-plum transition-colors"
+                
                 title={`Map Center Mode: ${CENTER_MODES[centerMode].label}`}
               >
                 {CENTER_MODES[centerMode].icon}
                 <span className="font-semibold text-sm">
                   {CENTER_MODES[centerMode].label}
                 </span>
-              </button>
+              </button> */}
             </div>
 
             {/* Action Buttons */}
