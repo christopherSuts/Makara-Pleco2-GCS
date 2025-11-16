@@ -1,2 +1,4 @@
 - integrate perimeter dengan pergerakan riil
 - generate jalur based on boundary
+- add emergency REST for RTL mode & change to manual mode
+- ada 2 log, log websocket dan log kek di mission planner

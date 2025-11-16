@@ -31,6 +31,32 @@ JSON_LOG_FILE = None
 _mav = None
 _reader_task: Optional[asyncio.Task] = None
 
+def send_set_home(lat: float = 0.0, lon: float = 0.0, alt: float = 0.0, use_current: bool = False):
+    """
+    Send MAV_CMD_DO_SET_HOME (179).
+    If use_current=True, vehicle uses its current position and lat/lon/alt are ignored by firmware.
+    """
+    if _mav is None:
+        print("SET_HOME ignored: no MAVLink connection")
+        return
+    try:
+        # CMD_LONG: target_system, target_component, command, confirmation, param1..param7
+        # param1 = use_current (1) or specified (0)
+        _mav.mav.command_long_send(
+            _mav.target_system or 1,
+            _mav.target_component or 1,
+            179,  # MAV_CMD_DO_SET_HOME
+            0,
+            1.0 if use_current else 0.0,  # param1
+            0, 0, 0,                      # param2..4 unused
+            float(lat),                   # param5 (x) latitude
+            float(lon),                   # param6 (y) longitude
+            float(alt)                    # param7 (z) altitude (AMSL or rel depending on FW)
+        )
+        print(f"SET_HOME sent (use_current={use_current}, lat={lat}, lon={lon}, alt={alt})")
+    except Exception as e:
+        print("SET_HOME error:", e)
+
 def _sanitize_numbers(x):
     """Recursively replace NaN/Inf with None so JSON is always valid."""
     if isinstance(x, float):
@@ -127,6 +153,37 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
                 blocking_recv
             )
 
+            if msg.get_type() == "COMMAND_ACK":
+                try:
+                    cmd = int(msg.command)
+                    res = int(msg.result)
+                except Exception:
+                    cmd = None
+                    res = None
+
+                if cmd == 179:  # MAV_CMD_DO_SET_HOME
+                    # MAV_RESULT_* values: 0=ACCEPTED, 1=TEMPORARILY_REJECTED, 2=DENIED, 3=UNSUPPORTED, 4=FAILED, 5=IN_PROGRESS
+                    result_names = {
+                        0: "ACCEPTED",
+                        1: "TEMPORARILY_REJECTED",
+                        2: "DENIED",
+                        3: "UNSUPPORTED",
+                        4: "FAILED",
+                        5: "IN_PROGRESS",
+                    }
+                    print(f"[SET_HOME][ACK] result={result_names.get(res, res)}")
+
+                    # Optional: tell all connected web clients so you can show a toast in the UI
+                    ack_msg = {
+                        "type": "SET_HOME_ACK",
+                        "payload": {"result": result_names.get(res, res)}
+                    }
+                    try:
+                        text = json.dumps(ack_msg, ensure_ascii=False)
+                        await broadcast(text)
+                    except Exception as e:
+                        print("[SET_HOME][ACK] broadcast error:", e)
+
             if not msg:
                 continue
 
@@ -162,7 +219,7 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
                     gps_str = f"GPS: lat={last_gps['lat']:.6f}, lon={last_gps['lon']:.6f}, alt={last_gps['alt']:.2f}m"
                 if last_att:
                     att_str = f"ATT: roll={last_att['roll']:.3f}, pitch={last_att['pitch']:.3f}, yaw={last_att['yaw']:.3f}"
-                print(f"[{ts}] {gps_str} | {att_str}")
+                # print(f"[{ts}] {gps_str} | {att_str}")
 
         except Exception as e:
             # non-fatal - keep loop alive but print error; stops quicker if stop_event set
@@ -186,11 +243,26 @@ async def websocket_endpoint(ws: WebSocket):
     print("WebSocket client connected:", ws.client)
     try:
         while True:
-            await ws.receive_text()
+            text = await ws.receive_text()
+            # Handle inbound control messages (JSON)
+            try:
+                payload = json.loads(text)
+                if isinstance(payload, dict) and payload.get("type") == "SET_HOME":
+                    use_current = bool(payload.get("use_current", False))
+                    lat = payload.get("lat", 0.0)
+                    lon = payload.get("lon", 0.0)
+                    alt = payload.get("alt", 0.0)
+                    # call helper (in main thread is fine; pymavlink call is quick)
+                    send_set_home(lat, lon, alt, use_current=use_current)
+                    continue
+            except Exception:
+                # ignore non-JSON or unexpected payloads
+                pass
+            # (Existing behavior for telemetry-only clients)
+            # No-op; we don't broadcast inbound text back
     except WebSocketDisconnect:
         clients.discard(ws)
         print("WebSocket client disconnected")
-
 
 @app.get("/snapshot")
 async def snapshot():

@@ -3,7 +3,8 @@ import SidebarButton from "@/components/ui/SidebarButton";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import LoadPerimeterModal from "@/components/ui/LoadPerimeterModal";
 import LoadBoundaryModal from "@/components/ui/LoadBoundaryModal";
-import PathParamsModal from "@/components/ui/PathParamsModal"; 
+import LoadPathModal from "@/components/ui/LoadPathModal";
+import PathParamsModal from "@/components/ui/PathParamsModal";
 import PerimeterIsland from "@/components/features/PerimeterIsland";
 import { usePerimeter } from "@/components/features/usePerimeter";
 import { useBoundaries } from "@/components/features/useBoundaries";
@@ -16,22 +17,67 @@ const CENTER_MODES = {
   free: {
     label: "Free",
     // Icon (example using heroicons-style SVG)
-    icon: <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" /></svg>
+    icon: (
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        strokeWidth={2}
+        stroke="currentColor"
+        className="w-5 h-5"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15"
+        />
+      </svg>
+    ),
   },
   gcs: {
     label: "GCS",
     // Icon (example)
-    icon: <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" /></svg>
+    icon: (
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        strokeWidth={2}
+        stroke="currentColor"
+        className="w-5 h-5"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M17.982 18.725A7.488 7.488 0 0 0 12 15.75a7.488 7.488 0 0 0-5.982 2.975m11.963 0a9 9 0 1 0-11.963 0m11.963 0A8.966 8.966 0 0 1 12 21a8.966 8.966 0 0 1-5.982-2.275M15 9.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z"
+        />
+      </svg>
+    ),
   },
   asv: {
     label: "ASV",
     // Icon (example)
-    icon: <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5"><path strokeLinecap="round" strokeLinejoin="round" d="m12.75 15 3-3m0 0-3-3m3 3h-7.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" /></svg>
-  }
+    icon: (
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        fill="none"
+        viewBox="0 0 24 24"
+        strokeWidth={2}
+        stroke="currentColor"
+        className="w-5 h-5"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="m12.75 15 3-3m0 0-3-3m3 3h-7.5M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z"
+        />
+      </svg>
+    ),
+  },
 };
 
 export default function HomePage() {
-  const { telemetry, isConnected } = useTelemetry();
+  const { telemetry, isConnected, send } = useTelemetry();
   const asvPosition = telemetry.GLOBAL_POSITION_INT;
   const perimeter = usePerimeter(asvPosition);
   const boundaries = useBoundaries();
@@ -39,21 +85,26 @@ export default function HomePage() {
 
   const [pathParamsOpen, setPathParamsOpen] = useState(false);
   const [pendingOrientation, setPendingOrientation] = useState("TB");
-  
+
   const boundaryShown = boundaries.shownId !== null;
   const hasPerimeter =
     (perimeter.recordedTrack?.length ?? 0) > 0 ||
     !!perimeter.loadedPerimeterMeta;
 
-  const [centerMode, setCenterMode] = useState('free');
+  const [pathLoadOpen, setPathLoadOpen] = useState(false);
+
+  const [centerMode, setCenterMode] = useState("free");
   const [gcsPosition, setGcsPosition] = useState(null);
 
+  // HOME state
+  const [homePoint, setHomePoint] = useState(null); // {lat,lng} or null
+  const [homePickMode, setHomePickMode] = useState(false);
 
   const cycleCenterMode = () => {
-    setCenterMode(prev => {
-      if (prev === 'free') return 'gcs';
-      if (prev === 'gcs') return 'asv';
-      return 'free';
+    setCenterMode((prev) => {
+      if (prev === "free") return "gcs";
+      if (prev === "gcs") return "asv";
+      return "free";
     });
   };
 
@@ -72,22 +123,36 @@ export default function HomePage() {
             label="Perimeter"
             menuTitle="Perimeter"
             menu={[
-              { label: "Record Perimeter", onClick: perimeter.start, disabled: perimeter.isRecording },
-              { label: "Show Saved Perimeters", onClick: perimeter.openLoad, },
-              { label: "Clear Perimeters", onClick: () => perimeter.dontSaveOrClear({ clearSaved: true }), disabled: !hasPerimeter },
+              {
+                label: "Record Perimeter",
+                onClick: perimeter.start,
+                disabled: perimeter.isRecording,
+              },
+              { label: "Show Saved Perimeters", onClick: perimeter.openLoad },
+              {
+                label: "Clear Perimeters",
+                onClick: () => perimeter.dontSaveOrClear({ clearSaved: true }),
+                disabled: !hasPerimeter,
+              },
             ]}
-          >Per</SidebarButton>
-
+          >
+            Perim
+          </SidebarButton>
           <SidebarButton
             label="Boundaries"
             menuTitle="Boundaries"
             menu={[
               { label: "Create Boundaries", onClick: boundaries.start },
               { label: "Show Saved Boundaries", onClick: boundaries.openLoad },
-              { label: "Clear Shown Boundaries", onClick: boundaries.clearShown, disabled: !boundaryShown },
+              {
+                label: "Clear Shown Boundaries",
+                onClick: boundaries.clearShown,
+                disabled: !boundaryShown,
+              },
             ]}
-          >B</SidebarButton>
-
+          >
+            Bound
+          </SidebarButton>
           <SidebarButton
             label="Path"
             menuTitle="Path"
@@ -99,25 +164,101 @@ export default function HomePage() {
               // { label: "Load Saved Path", onClick: path.load },
               // { label: "Save Current Path", onClick: path.save, disabled: !path.hasPath },
 
-              { label: "Generate: Top → Bottom", onClick: () => { setPendingOrientation("TB"); setPathParamsOpen(true); }},
-              { label: "Generate: Bottom → Top", onClick: () => { setPendingOrientation("BT"); setPathParamsOpen(true); }},
-              { label: "Generate: Right → Left", onClick: () => { setPendingOrientation("RL"); setPathParamsOpen(true); }},
-              { label: "Generate: Left → Right", onClick: () => { setPendingOrientation("LR"); setPathParamsOpen(true); }},
-              { label: "Load Saved Path", onClick: path.load },
+              {
+                label: "Generate: Top → Bottom",
+                onClick: () => {
+                  setPendingOrientation("TB");
+                  setPathParamsOpen(true);
+                },
+              },
+              {
+                label: "Generate: Bottom → Top",
+                onClick: () => {
+                  setPendingOrientation("BT");
+                  setPathParamsOpen(true);
+                },
+              },
+              {
+                label: "Generate: Right → Left",
+                onClick: () => {
+                  setPendingOrientation("RL");
+                  setPathParamsOpen(true);
+                },
+              },
+              {
+                label: "Generate: Left → Right",
+                onClick: () => {
+                  setPendingOrientation("LR");
+                  setPathParamsOpen(true);
+                },
+              },
+              {
+                label: "Load Saved Path",
+                onClick: () => setPathLoadOpen(true),
+              },
               {
                 label: "Save Current Path",
                 onClick: () => {
-                  const b = boundaries.saved?.find(x => x.id === boundaries.shownId);
-                  path.save({ name: undefined, boundary: b || { points: boundaries.shownPoints } });
+                  const b = boundaries.saved?.find(
+                    (x) => x.id === boundaries.shownId
+                  );
+                  path.save({
+                    name: undefined,
+                    boundary: b || { points: boundaries.shownPoints },
+                  });
                 },
-                disabled: !path.hasPath
+                disabled: !path.hasPath,
               },
-              { label: "Clear Shown Path", onClick: path.clear, disabled: !path.hasPath },
+              {
+                label: "Clear Shown Path",
+                onClick: path.clear,
+                disabled: !path.hasPath,
+              },
             ]}
-          >Path</SidebarButton>
-
-          <SidebarButton label="Set Home">H</SidebarButton>
-          <SidebarButton label="?">?</SidebarButton>
+          >
+            Path
+          </SidebarButton>
+          <SidebarButton
+            label="Set Home"
+            menuTitle="Set Home"
+            menu={[
+              {
+                label: "Use Current Boat Position",
+                onClick: () => {
+                  const p = asvPosition?.payload;
+                  if (
+                    !p ||
+                    !Number.isFinite(p.lat) ||
+                    !Number.isFinite(p.lon)
+                  ) {
+                    alert("ASV position not available.");
+                    return;
+                  }
+                  // 1) set marker
+                  setHomePoint({ lat: p.lat, lng: p.lon });
+                  // 2) send to Pixhawk via WS
+                  send({
+                    type: "SET_HOME",
+                    use_current: false,
+                    lat: p.lat,
+                    lon: p.lon,
+                    alt: 0,
+                  });
+                },
+              },
+              {
+                label: "Pick on Map",
+                onClick: () => setHomePickMode(true),
+              },
+              // {
+              //   label: "Clear Home",
+              //   onClick: () => setHomePoint(null),
+              //   disabled: !homePoint,
+              // },
+            ]}
+          >
+            Home
+          </SidebarButton>
         </aside>
 
         {/* Main Area */}
@@ -145,7 +286,6 @@ export default function HomePage() {
                   gcsPosition={gcsPosition}
                   setGcsPosition={setGcsPosition} // Give the map a way to tell the GCS location
                   centerMode={centerMode}
-
                   pathCoords={perimeter.recordedTrack}
                   recordedTrack={perimeter.recordedTrack}
                   missionPath={path.line}
@@ -161,6 +301,14 @@ export default function HomePage() {
                   onBoundaryBeginMovePoint={boundaries.beginMove}
                   onBoundaryMovePointTo={boundaries.moveTo}
                   onBoundaryEndMovePoint={boundaries.endMove}
+                  homePoint={homePoint}
+                  homePickMode={homePickMode}
+                  onHomePick={(ll) => {
+                    setHomePickMode(false);
+                    const lat = Number(ll.lat), lon = Number(ll.lng);
+                    setHomePoint({ lat, lng: lon });
+                    send({ type: "SET_HOME", use_current: false, lat, lon, alt: 0 });
+                  }}
                 />
               </div>
 
@@ -186,16 +334,22 @@ export default function HomePage() {
                         "px-3 py-1 rounded-full",
                         "bg-white text-[#1F1F22] border border-[#6B0F2B] shadow-sm",
                         "hover:bg-white/90 active:bg-white/80 transition",
-                        boundaries.isAdding ? "ring-2 ring-[#6B0F2B]" : ""
+                        boundaries.isAdding ? "ring-2 ring-[#6B0F2B]" : "",
                       ].join(" ")}
-                    >{boundaries.isAdding ? "Pause" : "Add More Dots"}</button>
+                    >
+                      {boundaries.isAdding ? "Pause" : "Add More Dots"}
+                    </button>
                     <span className="text-xs opacity-80">
-                      {boundaries.isAdding ? "Click map to add. Right-click to pause." : "Paused"}
+                      {boundaries.isAdding
+                        ? "Click map to add. Right-click to pause."
+                        : "Paused"}
                     </span>
                     <button
                       onClick={boundaries.stopReq}
                       className="px-3 py-1 rounded-full bg-white text-[#1F1F22] border border-[#6B0F2B] shadow-sm hover:bg-white/90 active:bg-white/80 transition"
-                    >Stop</button>
+                    >
+                      Stop
+                    </button>
                   </div>
                 </div>
               )}
@@ -257,8 +411,12 @@ export default function HomePage() {
 
             {/* Status Box */}
             <div className="w-48 bg-amv-white border border-amv-maroon/30 rounded-md ml-2 p-2 space-y-2 text-amv-black text-xs shadow-sm">
-              <div className="bg-amv-maroon/15 border border-amv-maroon/30 p-1 rounded">Thrust: ON</div>
-              <div className="bg-amv-maroon/15 border border-amv-maroon/30 p-1 rounded">Batt: 16V - 100%</div>
+              <div className="bg-amv-maroon/15 border border-amv-maroon/30 p-1 rounded">
+                Thrust: ON
+              </div>
+              <div className="bg-amv-maroon/15 border border-amv-maroon/30 p-1 rounded">
+                Batt: 16V - 100%
+              </div>
             </div>
           </div>
 
@@ -274,30 +432,35 @@ export default function HomePage() {
                 title={`Map Center Mode: ${CENTER_MODES[centerMode].label}`}
               >
                 {CENTER_MODES[centerMode].icon}
-                <span className="font-semibold text-sm">{CENTER_MODES[centerMode].label}</span>
+                <span className="font-semibold text-sm">
+                  {CENTER_MODES[centerMode].label}
+                </span>
               </button>
             </div>
 
             {/* Action Buttons */}
             <div className="grid grid-cols-2 gap-1 bg-amv-white border border-amv-maroon/30 rounded-md p-2 shadow-sm  space-x-1">
-              {["Manual", "Auto", "Send WP", "RTL", "Connect", "Cloud ⛅"].map((t, i) => (
-                <button
-                  key={t}
-                  className={[
-                    "p-2 rounded-md text-amv-white",
-                    "bg-amv-maroon hover:bg-[#5a0d24] active:bg-[#490a1e]",
-                    "transition-colors shadow-sm border border-amv-maroon",
-                    "hover:ring-2 hover:ring-amv-plum focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amv-plum"
-                  ].join(" ")}
-                  {...(i >= 4 ?
-                    {
-                      className:
-                        "p-2 rounded-md text-amv-white bg-amv-maroon hover:bg-[#5a0d24] active:bg-[#490a1e] transition-colors shadow-sm border border-amv-maroon hover:ring-2 hover:ring-amv-plum focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amv-plum col-span-2"
-                    } : {}
-                  )}>
-                  {t}
-                </button>
-              ))}
+              {["Manual", "Auto", "Send WP", "RTL", "Connect", "Cloud ⛅"].map(
+                (t, i) => (
+                  <button
+                    key={t}
+                    className={[
+                      "p-2 rounded-md text-amv-white",
+                      "bg-amv-maroon hover:bg-[#5a0d24] active:bg-[#490a1e]",
+                      "transition-colors shadow-sm border border-amv-maroon",
+                      "hover:ring-2 hover:ring-amv-plum focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amv-plum",
+                    ].join(" ")}
+                    {...(i >= 4
+                      ? {
+                          className:
+                            "p-2 rounded-md text-amv-white bg-amv-maroon hover:bg-[#5a0d24] active:bg-[#490a1e] transition-colors shadow-sm border border-amv-maroon hover:ring-2 hover:ring-amv-plum focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amv-plum col-span-2",
+                        }
+                      : {})}
+                  >
+                    {t}
+                  </button>
+                )
+              )}
             </div>
           </div>
 
@@ -333,12 +496,23 @@ export default function HomePage() {
             onClose={boundaries.closeLoad}
             onImport={boundaries.importBoundaryJSON}
           />
+          <LoadPathModal
+            open={pathLoadOpen}
+            onClose={() => setPathLoadOpen(false)}
+            onImport={(obj) => {
+              // usePath already supports loading an object directly
+              path.load(obj);
+              setPathLoadOpen(false);
+            }}
+          />
           <PathParamsModal
             open={pathParamsOpen}
             onClose={() => setPathParamsOpen(false)}
             defaults={path.lastParams}
             onSubmit={(rowGapMeters, wpGapMeters) => {
-              const b = boundaries.saved?.find(x => x.id === boundaries.shownId);
+              const b = boundaries.saved?.find(
+                (x) => x.id === boundaries.shownId
+              );
               path.generate({
                 orientation: pendingOrientation,
                 rowGapMeters,
