@@ -29,6 +29,17 @@ export function useTelemetry() {
             console.log("SET_HOME ACK:", result);
             toast.success(`SET_HOME: ${result}`);
           }
+          if (msg.type === "MISSION_UPLOAD_ACK") {
+            // { ok: true, message: "...", count: N }
+            toast.success(msg.payload?.message || "Mission upload OK");
+          }
+          if (msg.type === "MISSION_UPLOAD_PROGRESS") {
+            // { step: "...", index: n, total: N }
+            console.log("Mission:", msg.payload?.step, msg.payload?.index, "/", msg.payload?.total);
+          }
+          if (msg.type === "MISSION_UPLOAD_ERROR") {
+            toast.error(msg.payload?.message || "Mission upload failed");
+          }
 
           // store latest message by type
           setTelemetry((prev) => ({ ...prev, [msg.type]: msg }));

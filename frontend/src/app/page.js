@@ -15,6 +15,8 @@ import { useState } from "react";
 import MapWrapper from "../components/MapWrapper";
 import CenterModeToggle from "@/components/CenterModeToggle";
 import { useTelemetry } from "@/components/features/useTelemetry";
+import { pathToMissionItems } from "@/lib/missionWP";
+import { toast } from "react-toastify";
 
 export default function HomePage() {
   const { telemetry, isConnected, send } = useTelemetry();
@@ -40,12 +42,32 @@ export default function HomePage() {
   const [homePoint, setHomePoint] = useState(null); // {lat,lng} or null
   const [homePickMode, setHomePickMode] = useState(false);
 
-  const cycleCenterMode = () => {
-    setCenterMode((prev) => {
-      if (prev === "free") return "gcs";
-      if (prev === "gcs") return "asv";
-      return "free";
+  const sendMissionOverWS = () => {
+    if (!path.hasPath) {
+      toast.error("No path to send.");
+      return;
+    }
+    const current = path.current ?? {
+      type: "asv-path",
+      name: "Ad-hoc Path",
+      createdAt: new Date().toISOString(),
+      points: path.line ?? [],
+      params: path.lastParams ?? {},
+    };
+
+    const missionItems = pathToMissionItems(current);
+
+    // Send over the same telemetry socket
+    send({
+      type: "MISSION_UPLOAD",
+      payload: {
+        name: current.name,
+        count: missionItems.length,
+        items: missionItems,
+      },
     });
+
+    toast("Uploading mission…");
   };
 
   return (
@@ -333,28 +355,36 @@ export default function HomePage() {
             </div>
 
             {/* Action Buttons */}
-            <div className="grid grid-cols-2 gap-1 bg-amv-white border border-amv-maroon/30 rounded-md p-2 shadow-sm  space-x-1">
-              {["Manual", "Auto", "Send WP", "RTL", "Connect", "Cloud ⛅"].map(
-                (t, i) => (
-                  <button
-                    key={t}
-                    className={[
-                      "p-2 rounded-md text-amv-white",
-                      "bg-amv-maroon hover:bg-[#5a0d24] active:bg-[#490a1e]",
-                      "transition-colors shadow-sm border border-amv-maroon",
-                      "hover:ring-2 hover:ring-amv-plum focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amv-plum",
-                    ].join(" ")}
-                    {...(i >= 4
-                      ? {
-                          className:
-                            "p-2 rounded-md text-amv-white bg-amv-maroon hover:bg-[#5a0d24] active:bg-[#490a1e] transition-colors shadow-sm border border-amv-maroon hover:ring-2 hover:ring-amv-plum focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amv-plum col-span-2",
-                        }
-                      : {})}
-                  >
-                    {t}
-                  </button>
-                )
-              )}
+            <div className="grid grid-cols-2 gap-1 bg-amv-white border border-amv-maroon/30 rounded-md p-2 shadow-sm space-x-1">
+              {/* Manual */}
+              <button className="p-2 rounded-md text-amv-white bg-amv-maroon hover:bg-[#5a0d24] active:bg-[#490a1e] transition-colors shadow-sm border border-amv-maroon hover:ring-2 hover:ring-amv-plum">
+                Manual
+              </button>
+              {/* Auto */}
+              <button className="p-2 rounded-md text-amv-white bg-amv-maroon hover:bg-[#5a0d24] active:bg-[#490a1e] transition-colors shadow-sm border border-amv-maroon hover:ring-2 hover:ring-amv-plum">
+                Auto
+              </button>
+              {/* Send WP */}
+              <button
+                onClick={sendMissionOverWS}
+                disabled={!path.hasPath}
+                className={`p-2 rounded-md text-amv-white transition-colors shadow-sm border border-amv-maroon hover:ring-2 hover:ring-amv-plum
+                  ${path.hasPath ? "bg-amv-maroon hover:bg-[#5a0d24]" : "bg-gray-400 cursor-not-allowed"}`}
+              >
+                Send WP
+              </button>
+              {/* RTL */}
+              <button className="p-2 rounded-md text-amv-white bg-amv-maroon hover:bg-[#5a0d24] active:bg-[#490a1e] transition-colors shadow-sm border border-amv-maroon hover:ring-2 hover:ring-amv-plum">
+                RTL
+              </button>
+              {/* Connect (full-width) */}
+              <button className="p-2 rounded-md text-amv-white bg-amv-maroon hover:bg-[#5a0d24] active:bg-[#490a1e] transition-colors shadow-sm border border-amv-maroon hover:ring-2 hover:ring-amv-plum col-span-2">
+                Connect
+              </button>
+              {/* Cloud (full-width) */}
+              <button className="p-2 rounded-md text-amv-white bg-amv-maroon hover:bg-[#5a0d24] active:bg-[#490a1e] transition-colors shadow-sm border border-amv-maroon hover:ring-2 hover:ring-amv-plum col-span-2">
+                Cloud ⛅
+              </button>
             </div>
           </div>
 

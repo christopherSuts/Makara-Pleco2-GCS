@@ -281,7 +281,19 @@ export default function LeafletMap({
           homePickMode={homePickMode}
           onHomePick={onHomePick}
         />
-  
+        {/* HOME marker */}
+        {homePoint && (
+          <Marker position={[homePoint.lat, homePoint.lng]} icon={homeIcon}>
+            <Popup>
+              <b>HOME</b>
+              <br />
+              Lat: {homePoint.lat.toFixed(6)}
+              <br />
+              Lon: {homePoint.lng.toFixed(6)}
+            </Popup>
+          </Marker>
+        )}
+
         {/* Perimeter path */}
         {Array.isArray(pathCoords) && pathCoords.length > 1 && (
           <Polyline

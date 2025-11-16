@@ -31,19 +31,138 @@ JSON_LOG_FILE = None
 _mav = None
 _reader_task: Optional[asyncio.Task] = None
 
+# --- Unified emit helpers ---
+async def emit(obj: dict):
+    """Serialize a dict and broadcast (awaits)."""
+    try:
+        text = json.dumps(obj, ensure_ascii=False)
+        await broadcast(text)
+    except Exception as e:
+        print("emit() error:", e)
+
+def emit_nowait(obj: dict):
+    """Serialize + schedule broadcast without blocking caller."""
+    try:
+        text = json.dumps(obj, ensure_ascii=False)
+        asyncio.get_event_loop().create_task(broadcast(text))
+    except Exception as e:
+        print("emit_nowait() error:", e)
+
 def _now():
     from datetime import datetime, timezone
     return datetime.now(timezone.utc).isoformat()
 
 def wslog(level: str, msg: str):
-    """Fire-and-forget: broadcast a log line to all WS clients."""
+    data = {"type": "WS_LOG",
+            "payload": {"ts": _now(), "level": str(level), "msg": str(msg)}}
+    emit_nowait(data)
+
+async def verify_mission_count(expected: int, timeout=5):
+    """Request the mission list and compare count; logs result via wslog + emits VERIFY messages."""
+    if _mav is None:
+        await emit({"type":"MISSION_VERIFY_ERROR","payload":{"message":"No MAVLink connection"}})
+        return
+    target_sys  = _mav.target_system or 1
+    target_comp = _mav.target_component or 1
+
     try:
-        data = {"type": "WS_LOG", "payload": {"ts": _now(), "level": str(level), "msg": str(msg)}}
-        text = json.dumps(data, ensure_ascii=False)
-        # broadcast is async; schedule without blocking
-        asyncio.get_event_loop().create_task(broadcast(text))
+        _mav.mav.mission_request_list_send(
+            target_sys, target_comp, mavutil.mavlink.MAV_MISSION_TYPE_MISSION
+        )
+        wslog("info", "MISSION_VERIFY: request list")
+        msg = _mav.recv_match(type=['MISSION_COUNT'], blocking=True, timeout=timeout)
+        if msg is None:
+            raise TimeoutError("Timeout waiting for MISSION_COUNT")
+        count = int(getattr(msg, 'count', 0))
+        print(f"[MISSION] VERIFY count={count}, expected={expected}")
+        if count == expected:
+            wslog("info", f"MISSION saved on FCU (count={count})")
+            await emit({"type":"MISSION_VERIFY_RESULT","payload":{"ok":True,"count":count}})
+        else:
+            wslog("warn", f"MISSION count mismatch: FCU={count} expected={expected}")
+            await emit({"type":"MISSION_VERIFY_RESULT","payload":{"ok":False,"reason":f'Count mismatch FCU={count} expected={expected}'}})
     except Exception as e:
-        print("WS_LOG error:", e)
+        wslog("error", f"MISSION_VERIFY error: {e}")
+        await emit({"type":"MISSION_VERIFY_ERROR","payload":{"message":str(e)}})
+
+
+async def upload_mission_items_int(items):
+    """
+    items: list of dicts ready for MISSION_ITEM_INT:
+      {seq, frame, command, current, autocontinue, param1..4, x(int32), y(int32), z(float)}
+    Sends COUNT -> answers REQUEST_INT with ITEM_INTs -> waits for MISSION_ACK.
+    Logs every step via wslog() and emits progress frames for the UI.
+    """
+    if _mav is None:
+        wslog("error", "MISSION_UPLOAD: no MAVLink connection")
+        await emit({"type":"MISSION_UPLOAD_ERROR","payload":{"message":"No MAVLink connection"}})
+        return
+
+    try:
+        total = len(items)
+        target_sys  = _mav.target_system or 1
+        target_comp = _mav.target_component or 1
+
+        wslog("info", f"MISSION_UPLOAD start: {total} items")
+        await emit({"type":"MISSION_UPLOAD_PROGRESS","payload":{"step":"START","total":total}})
+
+        # Send how many items will follow
+        _mav.mav.mission_count_send(
+            target_sys, target_comp, total, mavutil.mavlink.MAV_MISSION_TYPE_MISSION
+        )
+        print(f"[MISSION] COUNT sent: {total}")
+        wslog("info", f"MISSION COUNT sent: {total}")
+        await emit({"type":"MISSION_UPLOAD_PROGRESS","payload":{"step":"COUNT_SENT","total":total}})
+
+        # Serve each request from FCU
+        while True:
+            msg = _mav.recv_match(
+                type=['MISSION_REQUEST_INT','MISSION_REQUEST','MISSION_ACK'],
+                blocking=True, timeout=10
+            )
+            if msg is None:
+                raise TimeoutError("Timeout waiting for MISSION_REQUEST/ACK")
+
+            mtype = msg.get_type()
+
+            if mtype in ('MISSION_REQUEST_INT','MISSION_REQUEST'):
+                req_seq = int(getattr(msg, 'seq', 0))
+                if req_seq < 0 or req_seq >= total:
+                    raise ValueError(f"Requested bad seq {req_seq}")
+
+                it = items[req_seq]
+                _mav.mav.mission_item_int_send(
+                    target_sys, target_comp,
+                    int(it['seq']), int(it['frame']), int(it['command']),
+                    int(it.get('current', 0)), int(it.get('autocontinue', 1)),
+                    float(it.get('param1', 0.0)), float(it.get('param2', 0.0)),
+                    float(it.get('param3', 0.0)), float(it.get('param4', 0.0)),
+                    int(it['x']), int(it['y']), float(it['z']),
+                    mavutil.mavlink.MAV_MISSION_TYPE_MISSION
+                )
+                print(f"[MISSION] ITEM_INT sent: seq={req_seq}")
+                wslog("info", f"MISSION ITEM sent: {req_seq}/{total}")
+                await emit({"type":"MISSION_UPLOAD_PROGRESS","payload":{"step":"ITEM_SENT","index":req_seq,"total":total}})
+
+            elif mtype == 'MISSION_ACK':
+                result = int(getattr(msg, 'type', 0))
+                names = {0:"ACCEPTED",1:"ERROR",2:"UNSUPPORTED",3:"NO_SPACE",4:"INVALID",5:"INVALID_PARAM",6:"FAILED"}
+                human = names.get(result, result)
+                print(f"[MISSION] ACK: {human}")
+                if result == 0:
+                    wslog("info", f"MISSION ACK: {human}")
+                    await emit({"type":"MISSION_UPLOAD_ACK","payload":{"ok":True,"message":f"Mission upload {human}","count":total}})
+                    # quick verification: re-read count from FCU
+                    asyncio.get_event_loop().create_task(verify_mission_count(total))
+                else:
+                    wslog("error", f"MISSION ACK: {human}")
+                    await emit({"type":"MISSION_UPLOAD_ERROR","payload":{"message":f"Mission ACK: {human}"}})
+                break
+
+    except Exception as e:
+        print("[MISSION] upload error:", e)
+        wslog("error", f"MISSION_UPLOAD error: {e}")
+        await emit({"type":"MISSION_UPLOAD_ERROR","payload":{"message":str(e)}})
 
 def send_set_home(lat: float = 0.0, lon: float = 0.0, alt: float = 0.0, use_current: bool = False):
     """
@@ -74,6 +193,27 @@ def send_set_home(lat: float = 0.0, lon: float = 0.0, alt: float = 0.0, use_curr
     except Exception as e:
         print("SET_HOME error:", e)
         wslog("error", f"SET_HOME send error: {e}")
+
+# --- Inbound message handlers ---
+async def handle_set_home(payload: dict):
+    use_current = bool(payload.get("use_current", False))
+    lat = payload.get("lat", 0.0)
+    lon = payload.get("lon", 0.0)
+    alt = payload.get("alt", 0.0)
+    send_set_home(lat, lon, alt, use_current=use_current)
+
+async def handle_mission_upload(payload: dict):
+    # Expect payload.items: list of MISSION_ITEM_INT-like dicts (seq, frame, command, x, y, z, param1..4)
+    items = payload.get("items") or []
+    # spawn your uploader without blocking
+    
+    asyncio.get_event_loop().create_task(upload_mission_items_int(items))
+
+HANDLERS = {
+    "SET_HOME": handle_set_home,
+    "MISSION_UPLOAD": handle_mission_upload,
+    # add future commands here...
+}
 
 def _sanitize_numbers(x):
     """Recursively replace NaN/Inf with None so JSON is always valid."""
@@ -198,8 +338,7 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
                         "payload": {"result": result_names.get(res, res)}
                     }
                     try:
-                        text = json.dumps(ack_msg, ensure_ascii=False)
-                        await broadcast(text)
+                        await emit(ack_msg)
                     except Exception as e:
                         print("[SET_HOME][ACK] broadcast error:", e)
 
@@ -264,26 +403,21 @@ async def websocket_endpoint(ws: WebSocket):
     try:
         while True:
             text = await ws.receive_text()
-            # Handle inbound control messages (JSON)
             try:
-                payload = json.loads(text)
-                if isinstance(payload, dict) and payload.get("type") == "SET_HOME":
-                    use_current = bool(payload.get("use_current", False))
-                    lat = payload.get("lat", 0.0)
-                    lon = payload.get("lon", 0.0)
-                    alt = payload.get("alt", 0.0)
-                    # call helper (in main thread is fine; pymavlink call is quick)
-                    send_set_home(lat, lon, alt, use_current=use_current)
+                data = json.loads(text)
+                if not isinstance(data, dict):
                     continue
-            except Exception:
-                # ignore non-JSON or unexpected payloads
-                pass
-            # (Existing behavior for telemetry-only clients)
-            # No-op; we don't broadcast inbound text back
+                msg_type = data.get("type")
+                payload = data.get("payload") or {}
+                handler = HANDLERS.get(msg_type)
+                if handler:
+                    await handler(payload)  # can be async; for long tasks, the handler itself schedules
+            except Exception as e:
+                wslog("warn", f"WS inbound parse/dispatch error: {e}")
+                # ignore bad frames, keep loop alive
     except WebSocketDisconnect:
         clients.discard(ws)
         wslog("info", f"WebSocket client disconnected: {ws.client}")
-        print("WebSocket client disconnected")
 
 @app.get("/snapshot")
 async def snapshot():
