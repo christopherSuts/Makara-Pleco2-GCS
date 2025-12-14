@@ -82,6 +82,15 @@ function GcsMarker({ gcsPosition }) {
   );
 }
 
+// Helper to center the map such that the target latlng is offset by [offsetX, offsetY] pixels
+// Positive offsetX shifts the map center to the right, placing the target to the left.
+function getOffsetCenter(map, latlng, offsetX, offsetY = 0) {
+  const zoom = map.getZoom();
+  const point = map.project(latlng, zoom);
+  const targetPoint = point.add([offsetX, offsetY]); 
+  return map.unproject(targetPoint, zoom);
+}
+
 function GcsLocationProvider({ onLocationUpdate, centerMode }) {
   const map = useMap();
 
@@ -96,7 +105,9 @@ function GcsLocationProvider({ onLocationUpdate, centerMode }) {
 
           // 2. Only center the map if the mode is 'gcs'
           if (centerMode === 'gcs') {
-            map.setView(pos, map.getZoom() || zoomSize);
+             // Offset 220px to the right so GCS appears 220px to the left (Visual Center)
+            const center = getOffsetCenter(map, pos, 220);
+            map.setView(center, map.getZoom() || zoomSize);
           }
         },
         (error) => {
@@ -118,7 +129,9 @@ function AsvCenteringController({ centerMode, parsedAsvPosition }) {
 
   useEffect(() => {
     if (centerMode === 'asv' && parsedAsvPosition) {
-      map.setView(parsedAsvPosition, map.getZoom() || zoomSize);
+       // Offset 220px to the right so ASV appears 220px to the left (Visual Center)
+      const center = getOffsetCenter(map, parsedAsvPosition, 220);
+      map.setView(center, map.getZoom() || zoomSize);
     }
   }, [map, centerMode, parsedAsvPosition]);
 
