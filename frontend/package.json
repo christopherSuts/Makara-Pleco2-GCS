@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "node server.js",
+    "dev:pymavlink": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
@@ -11,11 +12,13 @@
   "dependencies": {
     "leaflet": "^1.9.4",
     "next": "^15.5.4",
+    "node-mavlink": "^2.3.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-leaflet": "^5.0.0",
     "react-split": "^2.0.14",
-    "react-toastify": "^11.0.5"
+    "react-toastify": "^11.0.5",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

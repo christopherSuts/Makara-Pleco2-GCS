@@ -1,4 +1,5 @@
 "use client";
+import React from "react";
 
 const pwmToPct = (pwm) =>
   Math.max(-100, Math.min(100, ((Number(pwm) - 1500) / 400) * 100));
@@ -30,7 +31,32 @@ export default function StatusPanel({ telemetry, isBackendConnected }) {
   // Arming State (HEARTBEAT base_mode)
   // MAV_MODE_FLAG_SAFETY_ARMED = 128
   const baseMode = hb?.payload?.base_mode;
-  const isArmed = baseMode != null ? (baseMode & 128) !== 0 : false;
+  const rawIsArmed = baseMode != null ? (baseMode & 128) !== 0 : false;
+  
+  // Debounce Logic: 
+  // We use a ref to track the last time we saw a CONFIRMED "ARMED" signal.
+  // If we see "ARMED", we update the timestamp and set state to True.
+  // If we see "DISARMED", we only switch to False if it's been >1000ms since the last "ARMED".
+  // This filters out the "GCS Noise" (System 255) which sends Disarmed heartbeats interleaved with Drone heartbeats.
+  
+  const lastArmedTimeRef = React.useRef(0);
+  const [displayedArmed, setDisplayedArmed] = React.useState(false);
+  
+  React.useEffect(() => {
+      if (rawIsArmed) {
+          lastArmedTimeRef.current = Date.now();
+          setDisplayedArmed(true);
+      } else {
+          // It says Disarmed. Is this real or noise?
+          const timeSinceArmed = Date.now() - lastArmedTimeRef.current;
+          if (timeSinceArmed > 500) {
+              setDisplayedArmed(false);
+          }
+      }
+  }, [rawIsArmed, hb]); // Re-run when heartbeat updates
+  
+  // Also check periodically? No, effect is fine as telemetry updates freq.
+  const isArmed = displayedArmed;
 
   // Format Strings
   const lStr = leftPct.toFixed(0) + "%";
