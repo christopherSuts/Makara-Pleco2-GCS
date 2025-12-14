@@ -1,17 +1,34 @@
 @import "tailwindcss";
 @import "react-toastify/dist/ReactToastify.css";
 
-/* --- AMV theme tokens --- */
-:root{
-  --amv-black:   #000000; /* header/footer/sidebar */
-  --amv-grey:   #1e1e1e;
-  --amv-maroon: #a03e57; /* buttons / primary accents */
-  --amv-white:  #FFFFFF;
+/* --- AMV theme tokens (Dark Mode) --- */
+:root {
+  /* Core Colors based on Ref */
+  --amv-black:   #1e1e2e; /* Main Background (Dark Blue-Grey) */
+  --amv-grey:    #2d2d44; /* Panel Background (Lighter Blue-Grey) */
+  --amv-maroon:  #d946ef; /* Accent (Magenta/Pink from ref) - replacing maroon for now or keeping name */
+  /* Keeping name 'maroon' to avoid refactoring all components, but changing value to Vibrancy */
+  --amv-white:   #ffffff; /* Text */
+  
+  /* Additional */
+  --amv-plum:    #8b5cf6; /* Secondary Accent (Violet) */
+  
+  font-family: "Helvetica", "Arial", sans-serif;
+}
+
+body {
+  background-color: var(--amv-black);
+  color: var(--amv-white);
+  font-family: "Helvetica", "Arial", sans-serif;
 }
 
 @theme inline {
   --color-amv-black:   var(--amv-black);
   --color-amv-grey:    var(--amv-grey);
-  --color-amv-maroon: var(--amv-maroon);
-  --color-amv-white:  var(--amv-white);
+  --color-amv-maroon:  var(--amv-maroon);
+  --color-amv-white:   var(--amv-white);
+  --color-amv-plum:    var(--amv-plum);
+  
+  /* Override default font if needed or just rely on body */
+  --font-sans: "Helvetica", "Arial", sans-serif;
 }

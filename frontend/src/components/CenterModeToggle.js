@@ -7,24 +7,24 @@ export default function CenterModeToggle({ centerMode, setCenterMode }) {
     <div className="flex items-center gap-2">
       <button
         onClick={() => setCenterMode("asv")}
-        className={`px-3 py-1.5 rounded-md text-sm shadow
-          ${isASV ? "bg-black text-white" : "bg-white/90 text-black border border-black/10"}`}
+        className={`px-3 py-1.5 rounded-lg text-sm font-bold shadow-md transition-all
+          ${isASV ? "bg-amv-maroon text-white ring-1 ring-white/20" : "bg-amv-grey/90 text-amv-white/70 border border-white/10 hover:bg-amv-grey hover:text-amv-white"}`}
         title="Center map on ASV"
       >
         ASV
       </button>
       <button
         onClick={() => setCenterMode("gcs")}
-        className={`px-3 py-1.5 rounded-md text-sm shadow
-          ${isGCS ? "bg-black text-white" : "bg-white/90 text-black border border-black/10"}`}
+        className={`px-3 py-1.5 rounded-lg text-sm font-bold shadow-md transition-all
+          ${isGCS ? "bg-amv-maroon text-white ring-1 ring-white/20" : "bg-amv-grey/90 text-amv-white/70 border border-white/10 hover:bg-amv-grey hover:text-amv-white"}`}
         title="Center map on GCS"
       >
         GCS
       </button>
       <button
         onClick={() => setCenterMode("free")}
-        className={`px-3 py-1.5 rounded-md text-sm shadow
-          ${isFree ? "bg-black text-white" : "bg-white/90 text-black border border-black/10"}`}
+        className={`px-3 py-1.5 rounded-lg text-sm font-bold shadow-md transition-all
+          ${isFree ? "bg-amv-maroon text-white ring-1 ring-white/20" : "bg-amv-grey/90 text-amv-white/70 border border-white/10 hover:bg-amv-grey hover:text-amv-white"}`}
         title="Free pan/zoom"
       >
         Free

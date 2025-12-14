@@ -52,30 +52,41 @@ export default function LogPanel({ telemetry, className = "" }) {
   );
 
   return (
-    <div className={`grid grid-cols-2 gap-3 ${className}`}>
-      <div>
-        <div className="text-sm font-semibold mb-1">ArduPilot Messages</div>
-        <Box>
-          {ap.map((l, i) => (
-            <div key={i}>
-              <span className="text-black/60">{l.ts}</span>{" "}
-              <span className="px-1 rounded bg-black/5">{sevName(l.sev)}</span>{" "}
-              <span>{l.text}</span>
-            </div>
-          ))}
-        </Box>
+    <div className={`flex flex-col gap-2 h-full bg-amv-grey/90 backdrop-blur-md rounded-2xl border border-white/10 p-3 shadow-xl ${className}`}>
+      
+      {/* ArduPilot Messages */}
+      <div className="flex-1 min-h-0 flex flex-col">
+        <div className="text-xs font-bold text-center text-amv-white uppercase tracking-wider mb-1 shrink-0">ArduPilot Messages</div>
+        <div className="rounded-xl border border-white/5 bg-amv-black/30 p-1.5 flex-1 overflow-auto min-h-0">
+          <pre className="m-0 text-[11px] leading-5 font-mono tabular-nums whitespace-pre-wrap">
+            {ap.map((l, i) => (
+                <div key={i} className="border-b border-white/5 last:border-0 pb-0.5 mb-0.5">
+                <span className="text-amv-white/50">{l.ts}</span>{" "}
+                <span className={`px-1 rounded font-bold ${l.sev <= 4 ? "bg-red-500/20 text-red-300" : "bg-white/10 text-amv-white/80"}`}>{sevName(l.sev)}</span>{" "}
+                <span className="text-amv-white/90">{l.text}</span>
+                </div>
+            ))}
+          </pre>
+        </div>
       </div>
-      <div>
-        <div className="text-sm font-semibold mb-1">WebSocket / Backend</div>
-        <Box>
-          {ws.map((l, i) => (
-            <div key={i}>
-              <span className="text-black/60">{l.ts}</span>{" "}
-              <span className="px-1 rounded bg-black/5">{l.level}</span>{" "}
-              <span>{l.text}</span>
-            </div>
-          ))}
-        </Box>
+
+      {/* Divider */}
+      <div className="h-[1px] bg-white/10 shrink-0"></div>
+
+      {/* WebSocket / Backend */}
+      <div className="flex-1 min-h-0 flex flex-col">
+         <div className="text-xs font-bold text-center text-amv-white uppercase tracking-wider mb-1 shrink-0">WebSocket / Backend</div>
+         <div className="rounded-xl border border-white/5 bg-amv-black/30 p-1.5 flex-1 overflow-auto min-h-0">
+          <pre className="m-0 text-[11px] leading-5 font-mono tabular-nums whitespace-pre-wrap">
+            {ws.map((l, i) => (
+                <div key={i} className="border-b border-white/5 last:border-0 pb-0.5 mb-0.5">
+                <span className="text-amv-white/50">{l.ts}</span>{" "}
+                <span className="px-1 rounded bg-white/10 text-amv-white/80">{l.level}</span>{" "}
+                <span className="text-amv-white/90">{l.text}</span>
+                </div>
+            ))}
+          </pre>
+        </div>
       </div>
     </div>
   );

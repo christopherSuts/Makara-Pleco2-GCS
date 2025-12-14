@@ -1,6 +1,9 @@
 "use client";
 import SidebarButton from "@/components/ui/SidebarButton";
 import YawPitchRollPanel from "@/components/YawPitchRollPanel";
+import StatusPanel from "@/components/StatusPanel";
+import EchosounderPanel from "@/components/EchosounderPanel";
+import ControlsPanel from "@/components/ControlsPanel";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import LoadPerimeterModal from "@/components/ui/LoadPerimeterModal";
 import LoadBoundaryModal from "@/components/ui/LoadBoundaryModal";
@@ -70,93 +73,161 @@ export default function HomePage() {
     toast("Uploading mission…");
   };
 
-  return (
-    <div className="h-screen flex flex-col bg-amv-black text-amv-white">
-      {/* Header (dark grey) */}
-      <header className="flex items-center justify-between px-5 py-3 bg-amv-black">
-        <h1 className="font-bold text-xl">AMV • GCS</h1>
-        <button className="text-2xl hover:text-amv-plum transition">☰</button>
-      </header>
+  // Button Handlers
+  const handleManual = () => { console.log("Manual"); toast.info("Manual Mode"); };
+  const handleAuto = () => { console.log("Auto"); toast.info("Auto Mode"); };
+  const handleRTL = () => { console.log("RTL"); toast.info("RTL Mode"); };
+  const handleConnect = () => { console.log("Connect"); toast.info("Connect Clicked"); };
+  const handleCloud = () => { console.log("Cloud"); toast.info("Cloud Clicked"); };
 
-      <div className="flex flex-1 gap-1 p-1 overflow-visible bg-amv-black">
-        {/* Sidebar (dark grey) */}
-        <aside className="w-16 bg-amv-grey flex flex-col items-center gap-3 py-3">
+  // Icons
+  const PerimeterIcon = (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
+      <path d="M12 2l8 4.5v9L12 20l-8-4.5v-9L12 2z" />
+    </svg>
+  );
+
+  const BoundaryIcon = (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
+      <path d="M3 3h18v18H3z" />
+      <path d="M9 9h6v6H9z" />
+    </svg>
+  );
+
+  const PathIcon = (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
+      <polyline points="22 2 13.5 10.5 16 13 4 21" />
+      <polyline points="16 13 20 17" />
+      <line x1="2" y1="2" x2="22" y2="22" />
+    </svg>
+  );
+
+  const HomeIcon = (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-6 h-6">
+      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+      <polyline points="9 22 9 12 15 12 15 22" />
+    </svg>
+  );
+
+  return (
+    <div className="relative h-screen w-screen overflow-hidden bg-amv-black text-amv-black font-sans">
+      
+      {/* 1. Map Background Layer (Z-0) */}
+      <div className="absolute inset-0 z-0">
+         <div className="absolute top-2 left-2 z-[1000]">
+           <CenterModeToggle centerMode={centerMode} setCenterMode={setCenterMode} />
+         </div>
+         <MapWrapper
+           asvPosition={asvPosition}
+           gcsPosition={gcsPosition}
+           setGcsPosition={setGcsPosition}
+           centerMode={centerMode}
+           pathCoords={perimeter.recordedTrack}
+           recordedTrack={perimeter.recordedTrack}
+           missionPath={path.line}
+           isBoundarySession={boundaries.isSession}
+           isBoundaryAdding={boundaries.isAdding}
+           boundaryPoints={boundaries.points}
+           shownBoundaryPoints={boundaries.shownPoints}
+           movingDotId={boundaries.movingId}
+           onBoundaryAddPoint={boundaries.addPoint}
+           onBoundaryPause={boundaries.pauseAdd}
+           onBoundaryRemovePoint={boundaries.remove}
+           onBoundaryBeginMovePoint={boundaries.beginMove}
+           onBoundaryMovePointTo={boundaries.moveTo}
+           onBoundaryEndMovePoint={boundaries.endMove}
+           homePoint={homePoint}
+           homePickMode={homePickMode}
+           onHomePick={(ll) => {
+             setHomePickMode(false);
+             const lat = Number(ll.lat), lon = Number(ll.lng);
+             setHomePoint({ lat, lng: lon });
+             send({ type: "SET_HOME", use_current: false, lat, lon, alt: 0 });
+           }}
+         />
+      </div>
+
+      {/* 2. UI Overlay Layer (Z-10, pointer-events-none generally, auto for children) */}
+      <div className="absolute inset-0 z-10 pointer-events-none">
+        
+        {/* Sidebar Left Centered */}
+        <aside className="absolute left-0 top-1/2 -translate-y-1/2 pointer-events-auto bg-amv-grey/90 backdrop-blur-md rounded-r-2xl p-2 flex flex-col gap-3 shadow-xl border-y border-r border-white/10">
           <SidebarButton
             label="Perimeter"
-            menuTitle="Perimeter"
+            icon={PerimeterIcon}
+            menuTitle="Perimeter Controls"
             menu={[
               {
                 label: "Record Perimeter",
                 onClick: perimeter.start,
                 disabled: perimeter.isRecording,
+                icon: "⏺"
               },
-              { label: "Show Saved Perimeters", onClick: perimeter.openLoad },
+              { label: "Show Saved", onClick: perimeter.openLoad, icon: "📂" },
               {
                 label: "Clear Perimeters",
                 onClick: () => perimeter.dontSaveOrClear({ clearSaved: true }),
                 disabled: !hasPerimeter,
+                icon: "🗑"
               },
             ]}
-          >
-            Perim
-          </SidebarButton>
+          />
           <SidebarButton
             label="Boundaries"
-            menuTitle="Boundaries"
+            icon={BoundaryIcon}
+            menuTitle="Boundary Tools"
             menu={[
-              { label: "Create Boundaries", onClick: boundaries.start },
-              { label: "Show Saved Boundaries", onClick: boundaries.openLoad },
+              { label: "Create New", onClick: boundaries.start, icon: "✏️" },
+              { label: "Load Saved", onClick: boundaries.openLoad, icon: "📂" },
               {
-                label: "Clear Shown Boundaries",
+                label: "Clear Shown",
                 onClick: boundaries.clearShown,
                 disabled: !boundaryShown,
+                icon: "❌"
               },
             ]}
-          >
-            Bound
-          </SidebarButton>
+          />
           <SidebarButton
-            label="Path"
-            menuTitle="Path"
+            label="Path Generation"
+            icon={PathIcon}
+            menuTitle="Path Generation"
             menu={[
-              // { label: "Generate: Top → Bottom", onClick: () => path.generate("TB", boundaries.points) },
-              // { label: "Generate: Bottom → Top", onClick: () => path.generate("BT", boundaries.points) },
-              // { label: "Generate: Right → Left", onClick: () => path.generate("RL", boundaries.points) },
-              // { label: "Generate: Left → Right", onClick: () => path.generate("LR", boundaries.points) },
-              // { label: "Load Saved Path", onClick: path.load },
-              // { label: "Save Current Path", onClick: path.save, disabled: !path.hasPath },
-
               {
-                label: "Generate: Top → Bottom",
+                label: "Top → Bottom",
                 onClick: () => {
                   setPendingOrientation("TB");
                   setPathParamsOpen(true);
                 },
+                icon: "⬇️"
               },
               {
-                label: "Generate: Bottom → Top",
+                label: "Bottom → Top",
                 onClick: () => {
                   setPendingOrientation("BT");
                   setPathParamsOpen(true);
                 },
+                icon: "⬆️"
               },
               {
-                label: "Generate: Right → Left",
+                label: "Right → Left",
                 onClick: () => {
                   setPendingOrientation("RL");
                   setPathParamsOpen(true);
                 },
+                icon: "⬅️"
               },
               {
-                label: "Generate: Left → Right",
+                label: "Left → Right",
                 onClick: () => {
                   setPendingOrientation("LR");
                   setPathParamsOpen(true);
                 },
+                icon: "➡️"
               },
               {
                 label: "Load Saved Path",
                 onClick: () => setPathLoadOpen(true),
+                icon: "📂"
               },
               {
                 label: "Save Current Path",
@@ -170,22 +241,23 @@ export default function HomePage() {
                   });
                 },
                 disabled: !path.hasPath,
+                icon: "💾"
               },
               {
                 label: "Clear Shown Path",
                 onClick: path.clear,
                 disabled: !path.hasPath,
+                icon: "❌"
               },
             ]}
-          >
-            Path
-          </SidebarButton>
+          />
           <SidebarButton
             label="Set Home"
-            menuTitle="Set Home"
+            icon={HomeIcon}
+            menuTitle="Home Position"
             menu={[
               {
-                label: "Use Current Boat Position",
+                label: "Use Boat Position",
                 onClick: () => {
                   const p = asvPosition?.payload;
                   if (
@@ -196,9 +268,7 @@ export default function HomePage() {
                     alert("ASV position not available.");
                     return;
                   }
-                  // 1) set marker
                   setHomePoint({ lat: p.lat, lng: p.lon });
-                  // 2) send to Pixhawk via WS
                   send({
                     type: "SET_HOME",
                     use_current: false,
@@ -207,188 +277,99 @@ export default function HomePage() {
                     alt: 0,
                   });
                 },
+                icon: "📍"
               },
               {
                 label: "Pick on Map",
                 onClick: () => setHomePickMode(true),
+                icon: "point"
               },
-              // {
-              //   label: "Clear Home",
-              //   onClick: () => setHomePoint(null),
-              //   disabled: !homePoint,
-              // },
             ]}
-          >
-            Home
-          </SidebarButton>
+          />
         </aside>
 
-        {/* Main Area */}
-        <main className="flex-1 flex flex-col p-2 overflow-auto bg-amv-maroon">
-          {/* Top Status + Map */}
-          <div className="flex flex-1">
-            {/* Depth + Info */}
-            <div className="text-amv-black w-40 bg-amv-white border border-amv-maroon/30 rounded-md mr-2 p-2 space-y-2 shadow-sm">
-              <div className="text-xs">
-                Long: ...
-                <br />
-                Lat: ...
-                <br />
-                Depth:
-              </div>
-              <div className="h-48 bg-gradient-to-b from-[#ff6b6b] to-[#8b4dff] w-8 mx-auto rounded"></div>
-              <div className="text-xs text-center">0m - max</div>
-            </div>
+        {/* Right Area Grid Layout */}
+        <div className="absolute right-4 top-4 bottom-4 pointer-events-none grid grid-cols-[360px_240px_240px] grid-rows-2 gap-3">
+           {/* Top Row */}
+           <div className="col-start-1 row-start-2 min-w-0 h-50 pointer-events-auto self-end">
+               <YawPitchRollPanel telemetry={telemetry} />
+           </div>
+           
+           <div className="col-start-2 row-start-1 min-w-0 shadow-lg pointer-events-auto">
+               <StatusPanel telemetry={telemetry} />
+           </div>
+           
+           <div className="col-start-3 row-start-1 min-w-0 shadow-lg pointer-events-auto">
+               <EchosounderPanel telemetry={telemetry} />
+           </div>
 
-            {/* Map Card */}
-            <div className="flex-1 bg-amv-white border border-amv-maroon/30 rounded-md p-2 relative shadow-sm">
-              <div className="absolute inset-0 z-0 rounded-md overflow-hidden">
-                <div className="absolute top-2 left-2 z-[1000]">
-                  <CenterModeToggle centerMode={centerMode} setCenterMode={setCenterMode} />
-                </div>
-                <MapWrapper
-                  asvPosition={asvPosition}
-                  gcsPosition={gcsPosition}
-                  setGcsPosition={setGcsPosition} // Give the map a way to tell the GCS location
-                  centerMode={centerMode}
-                  pathCoords={perimeter.recordedTrack}
-                  recordedTrack={perimeter.recordedTrack}
-                  missionPath={path.line}
-                  // boundaries
-                  isBoundarySession={boundaries.isSession}
-                  isBoundaryAdding={boundaries.isAdding}
-                  boundaryPoints={boundaries.points}
-                  shownBoundaryPoints={boundaries.shownPoints}
-                  movingDotId={boundaries.movingId}
-                  onBoundaryAddPoint={boundaries.addPoint}
-                  onBoundaryPause={boundaries.pauseAdd}
-                  onBoundaryRemovePoint={boundaries.remove}
-                  onBoundaryBeginMovePoint={boundaries.beginMove}
-                  onBoundaryMovePointTo={boundaries.moveTo}
-                  onBoundaryEndMovePoint={boundaries.endMove}
-                  homePoint={homePoint}
-                  homePickMode={homePickMode}
-                  onHomePick={(ll) => {
-                    setHomePickMode(false);
-                    const lat = Number(ll.lat), lon = Number(ll.lng);
-                    setHomePoint({ lat, lng: lon });
-                    send({ type: "SET_HOME", use_current: false, lat, lon, alt: 0 });
-                  }}
-                />
-              </div>
+           {/* Bottom Row */}
+           {/* col-1 empty - transparent to clicks because parent is pointer-events-none and this cell has no child */}
+           
+           <div className="col-start-2 row-start-2 min-w-0 pointer-events-auto">
+               <LogPanel telemetry={telemetry} className="h-full w-full" />
+           </div>
 
-              {/* Dynamic Island — top-center controller */}
-              {/* Perimeter dynamic island */}
-              {perimeter.isRecording && (
-                <PerimeterIsland
-                  isPaused={perimeter.isPaused}
-                  onPlay={perimeter.play}
-                  onPause={perimeter.pause}
-                  onStop={perimeter.stop}
-                  onSave={perimeter.save}
-                  canSave={perimeter.recordedTrack?.length > 1}
-                />
-              )}
+           <div className="col-start-3 row-start-2 min-w-0 shrink-0 shadow-lg pointer-events-auto">
+               <ControlsPanel 
+                onManual={handleManual}
+                onAuto={handleAuto}
+                onRTL={handleRTL}
+                onConnect={handleConnect}
+                onCloud={handleCloud}
+                onSendWP={sendMissionOverWS}
+                hasPath={path.hasPath}
+               />
+           </div>
+        </div>
 
-              {boundaries.isSession && (
-                <div className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 z-40">
-                  <div className="pointer-events-auto flex items-center gap-2 rounded-full bg-black/70 text-white border border-[#6B0F2B] px-3 py-1.5 shadow-[0_10px_24px_rgba(107,15,43,0.45)] backdrop-blur">
-                    <button
-                      onClick={boundaries.toggleAdd}
-                      className={[
-                        "px-3 py-1 rounded-full",
-                        "bg-white text-[#1F1F22] border border-[#6B0F2B] shadow-sm",
-                        "hover:bg-white/90 active:bg-white/80 transition",
-                        boundaries.isAdding ? "ring-2 ring-[#6B0F2B]" : "",
-                      ].join(" ")}
-                    >
-                      {boundaries.isAdding ? "Pause" : "Add More Dots"}
-                    </button>
-                    <span className="text-xs opacity-80">
-                      {boundaries.isAdding
-                        ? "Click map to add. Right-click to pause."
-                        : "Paused"}
-                    </span>
-                    <button
-                      onClick={boundaries.stopReq}
-                      className="px-3 py-1 rounded-full bg-white text-[#1F1F22] border border-[#6B0F2B] shadow-sm hover:bg-white/90 active:bg-white/80 transition"
-                    >
-                      Stop
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <YawPitchRollPanel telemetry={telemetry}/>
-            </div>
-
-            {/* Status Box */}
-            <div className="w-48 bg-amv-white border border-amv-maroon/30 rounded-md ml-2 p-2 space-y-2 text-amv-black text-xs shadow-sm">
-              <div className="bg-amv-maroon/15 border border-amv-maroon/30 p-1 rounded">
-                Thrust: ON
-              </div>
-              <div className="bg-amv-maroon/15 border border-amv-maroon/30 p-1 rounded">
-                Batt: 16V - 100%
-              </div>
-            </div>
+        {/* Dynamic Island (Perimeter) - Top Center */}
+        {perimeter.isRecording && (
+          <div className="pointer-events-auto absolute top-4 left-1/2 -translate-x-1/2">
+             <PerimeterIsland
+                isPaused={perimeter.isPaused}
+                onPlay={perimeter.play}
+                onPause={perimeter.pause}
+                onStop={perimeter.stop}
+                onSave={perimeter.save}
+                canSave={perimeter.recordedTrack?.length > 1}
+              />
           </div>
+        )}
 
-          {/* Bottom Controls */}
-          <div className="flex mt-2 space-x-2">
-            {/* Log / Console */}
-            <div className="flex-1 min-h-0 text-amv-black bg-amv-white border border-amv-maroon/30 rounded-md p-2 shadow-sm">
-              <div className="mt-0.5">
-                <LogPanel telemetry={telemetry} />
-              </div>
-              {/* <div className="text-sm font-semibold mb-1 mt-1">Map Center mode</div>
-              <button
-                onClick={cycleCenterMode}
-                className="flex items-center gap-2 px-3 py-2 rounded-lg shadow-lg bg-amv-grey text-amv-white border border-amv-white/10 hover:bg-amv-plum transition-colors"
-                
-                title={`Map Center Mode: ${CENTER_MODES[centerMode].label}`}
-              >
-                {CENTER_MODES[centerMode].icon}
-                <span className="font-semibold text-sm">
-                  {CENTER_MODES[centerMode].label}
-                </span>
-              </button> */}
-            </div>
+        {/* Boundary Island - Top Center */}
+        {boundaries.isSession && (
+          <div className="pointer-events-auto absolute top-20 left-1/2 -translate-x-1/2 z-40">
+             <div className="flex items-center gap-2 rounded-full bg-black/70 text-white border border-[#6B0F2B] px-3 py-1.5 shadow-[0_10px_24px_rgba(107,15,43,0.45)] backdrop-blur">
+               <button
+                 onClick={boundaries.toggleAdd}
+                 className={[
+                   "px-3 py-1 rounded-full",
+                   "bg-white text-[#1F1F22] border border-[#6B0F2B] shadow-sm",
+                   "hover:bg-white/90 active:bg-white/80 transition",
+                   boundaries.isAdding ? "ring-2 ring-[#6B0F2B]" : "",
+                 ].join(" ")}
+               >
+                 {boundaries.isAdding ? "Pause" : "Add More Dots"}
+               </button>
+               <span className="text-xs opacity-80">
+                 {boundaries.isAdding
+                   ? "Click map to add. Right-click to pause."
+                   : "Paused"}
+               </span>
+               <button
+                 onClick={boundaries.stopReq}
+                 className="px-3 py-1 rounded-full bg-white text-[#1F1F22] border border-[#6B0F2B] shadow-sm hover:bg-white/90 active:bg-white/80 transition"
+               >
+                 Stop
+               </button>
+             </div>
+           </div>
+        )}
+      </div>
 
-            {/* Action Buttons */}
-            <div className="grid grid-cols-2 gap-1 bg-amv-white border border-amv-maroon/30 rounded-md p-2 shadow-sm space-x-1">
-              {/* Manual */}
-              <button className="p-2 rounded-md text-amv-white bg-amv-maroon hover:bg-[#5a0d24] active:bg-[#490a1e] transition-colors shadow-sm border border-amv-maroon hover:ring-2 hover:ring-amv-plum">
-                Manual
-              </button>
-              {/* Auto */}
-              <button className="p-2 rounded-md text-amv-white bg-amv-maroon hover:bg-[#5a0d24] active:bg-[#490a1e] transition-colors shadow-sm border border-amv-maroon hover:ring-2 hover:ring-amv-plum">
-                Auto
-              </button>
-              {/* Send WP */}
-              <button
-                onClick={sendMissionOverWS}
-                disabled={!path.hasPath}
-                className={`p-2 rounded-md text-amv-white transition-colors shadow-sm border border-amv-maroon hover:ring-2 hover:ring-amv-plum
-                  ${path.hasPath ? "bg-amv-maroon hover:bg-[#5a0d24]" : "bg-gray-400 cursor-not-allowed"}`}
-              >
-                Send WP
-              </button>
-              {/* RTL */}
-              <button className="p-2 rounded-md text-amv-white bg-amv-maroon hover:bg-[#5a0d24] active:bg-[#490a1e] transition-colors shadow-sm border border-amv-maroon hover:ring-2 hover:ring-amv-plum">
-                RTL
-              </button>
-              {/* Connect (full-width) */}
-              <button className="p-2 rounded-md text-amv-white bg-amv-maroon hover:bg-[#5a0d24] active:bg-[#490a1e] transition-colors shadow-sm border border-amv-maroon hover:ring-2 hover:ring-amv-plum col-span-2">
-                Connect
-              </button>
-              {/* Cloud (full-width) */}
-              <button className="p-2 rounded-md text-amv-white bg-amv-maroon hover:bg-[#5a0d24] active:bg-[#490a1e] transition-colors shadow-sm border border-amv-maroon hover:ring-2 hover:ring-amv-plum col-span-2">
-                Cloud ⛅
-              </button>
-            </div>
-          </div>
-
-          {/* Stop Confirmation Modal */}
+      {/* Modals (Z-50) */}
+      <div className="relative z-50">
           {perimeter.showStopModal && (
             <ConfirmModal
               title="End Perimeter Recording?"
@@ -398,7 +379,6 @@ export default function HomePage() {
             />
           )}
 
-          {/* Boundaries Stop modal */}
           {boundaries.showStopModal && (
             <ConfirmModal
               title="End Boundary Definition?"
@@ -424,7 +404,6 @@ export default function HomePage() {
             open={pathLoadOpen}
             onClose={() => setPathLoadOpen(false)}
             onImport={(obj) => {
-              // usePath already supports loading an object directly
               path.load(obj);
               setPathLoadOpen(false);
             }}
@@ -446,7 +425,6 @@ export default function HomePage() {
               setPathParamsOpen(false);
             }}
           />
-        </main>
       </div>
     </div>
   );
