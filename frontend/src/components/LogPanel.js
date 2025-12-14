@@ -8,7 +8,7 @@ function sevName(n) {
   return map[Number(n)] ?? String(n ?? "");
 }
 
-export default function LogPanel({ telemetry, className = "" }) {
+export default function LogPanel({ telemetry, isBackendConnected, className = "" }) {
   const [ap, setAp] = useState([]);   // ArduPilot Messages (STATUSTEXT)
   const [ws, setWs] = useState([]);   // Backend / WS status (WS_LOG)
   const lastStatustextRef = useRef(null);
@@ -42,22 +42,16 @@ export default function LogPanel({ telemetry, className = "" }) {
     setWs(prev => [...prev, line].slice(-MAX_LINES));
   }, [telemetry?.WS_LOG]);
 
-  const Box = ({ children }) => (
-    <div className="rounded-xl border border-black/15 bg-white/80 p-2 h-40 overflow-auto">
-      {/* wrap long lines so we don't create horizontal page scroll */}
-      <pre className="m-0 text-[11px] leading-5 font-mono tabular-nums whitespace-pre-wrap">
-        {children}
-      </pre>
-    </div>
-  );
-
   return (
-    <div className={`flex flex-col gap-2 h-full bg-amv-grey/90 backdrop-blur-md rounded-2xl border border-white/10 p-3 shadow-xl ${className}`}>
+    <div className="bg-amv-grey/90 backdrop-blur-md border border-white/10 rounded-2xl p-3 shadow-xl h-full flex flex-col gap-1 overflow-auto">
       
       {/* ArduPilot Messages */}
       <div className="flex-1 min-h-0 flex flex-col">
-        <div className="text-xs font-bold text-center text-amv-white uppercase tracking-wider mb-1 shrink-0">ArduPilot Messages</div>
-        <div className="rounded-xl border border-white/5 bg-amv-black/30 p-1.5 flex-1 overflow-auto min-h-0">
+        <div className="flex justify-center items-center gap-2 mb-1 shrink-0 relative">
+             <div className="text-xs font-bold text-amv-white uppercase tracking-wider">ArduPilot Messages</div>
+             <div className={`w-2 h-2 rounded-full ${isBackendConnected ? "bg-emerald-500 shadow-[0_0_8px_#10b981]" : "bg-red-500/50"}`} title={isBackendConnected ? "Telemetry Live" : "No Signal"}></div>
+        </div>
+        <div className={"rounded-xl border border-white/5 bg-amv-black/30 p-1.5 flex-1 overflow-auto min-h-0" + (isBackendConnected ? " opacity-100" : " opacity-40 grayscale pointer-events-none")}>
           <pre className="m-0 text-[11px] leading-5 font-mono tabular-nums whitespace-pre-wrap">
             {ap.map((l, i) => (
                 <div key={i} className="border-b border-white/5 last:border-0 pb-0.5 mb-0.5">
@@ -76,7 +70,7 @@ export default function LogPanel({ telemetry, className = "" }) {
       {/* WebSocket / Backend */}
       <div className="flex-1 min-h-0 flex flex-col">
          <div className="text-xs font-bold text-center text-amv-white uppercase tracking-wider mb-1 shrink-0">WebSocket / Backend</div>
-         <div className="rounded-xl border border-white/5 bg-amv-black/30 p-1.5 flex-1 overflow-auto min-h-0">
+         <div className={"rounded-xl border border-white/5 bg-amv-black/30 p-1.5 flex-1 overflow-auto min-h-0" + (isBackendConnected ? " opacity-100" : " opacity-40 grayscale pointer-events-none")}>
           <pre className="m-0 text-[11px] leading-5 font-mono tabular-nums whitespace-pre-wrap">
             {ws.map((l, i) => (
                 <div key={i} className="border-b border-white/5 last:border-0 pb-0.5 mb-0.5">

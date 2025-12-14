@@ -209,10 +209,33 @@ async def handle_mission_upload(payload: dict):
     
     asyncio.get_event_loop().create_task(upload_mission_items_int(items))
 
+async def handle_set_mode(payload: dict):
+    mode_name = str(payload.get("mode", "")).upper()
+    if not mode_name or _mav is None:
+        wslog("warn", f"SET_MODE ignored: invalid mode '{mode_name}' or no connection")
+        return
+
+    # 1. Get mode ID from mapping
+    mapping = _mav.mode_mapping()
+    if not mapping or mode_name not in mapping:
+        wslog("warn", f"SET_MODE: Unknown mode '{mode_name}'. Available: {list(mapping.keys()) if mapping else 'None'}")
+        return
+    
+    mode_id = mapping[mode_name]
+
+    try:
+        # 2. Set mode using pymavlink helper
+        # set_mode_apm(custom_mode, custom_sub_mode=0, base_mode=0)
+        # Note: set_mode_apm handles the COMMAND_LONG(176) generation
+        _mav.set_mode(mode_id)
+        wslog("info", f"SET_MODE: Sent request for {mode_name} ({mode_id})")
+    except Exception as e:
+        wslog("error", f"SET_MODE error: {e}")
+
 HANDLERS = {
     "SET_HOME": handle_set_home,
     "MISSION_UPLOAD": handle_mission_upload,
-    # add future commands here...
+    "SET_MODE": handle_set_mode,
 }
 
 def _sanitize_numbers(x):

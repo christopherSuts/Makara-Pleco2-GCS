@@ -74,9 +74,19 @@ export default function HomePage() {
   };
 
   // Button Handlers
-  const handleManual = () => { console.log("Manual"); toast.info("Manual Mode"); };
-  const handleAuto = () => { console.log("Auto"); toast.info("Auto Mode"); };
-  const handleRTL = () => { console.log("RTL"); toast.info("RTL Mode"); };
+  // Button Handlers
+  const handleManual = () => { 
+      console.log("Setting Mode: MANUAL"); 
+      send({ type: "SET_MODE", payload: { mode: "MANUAL" } });
+  };
+  const handleAuto = () => { 
+      console.log("Setting Mode: AUTO"); 
+      send({ type: "SET_MODE", payload: { mode: "AUTO" } });
+  };
+  const handleRTL = () => { 
+      console.log("Setting Mode: RTL"); 
+      send({ type: "SET_MODE", payload: { mode: "RTL" } });
+  };
   const handleConnect = () => { console.log("Connect"); toast.info("Connect Clicked"); };
   const handleCloud = () => { console.log("Cloud"); toast.info("Cloud Clicked"); };
 
@@ -289,14 +299,10 @@ export default function HomePage() {
         </aside>
 
         {/* Right Area Grid Layout */}
-        <div className="absolute right-4 top-4 bottom-4 pointer-events-none grid grid-cols-[360px_240px_240px] grid-rows-2 gap-3">
+        <div className="absolute right-2 top-2 bottom-2 pointer-events-none grid grid-cols-[330px_220px_220px] grid-rows-2 gap-2">
            {/* Top Row */}
-           <div className="col-start-1 row-start-2 min-w-0 h-50 pointer-events-auto self-end">
-               <YawPitchRollPanel telemetry={telemetry} />
-           </div>
-           
            <div className="col-start-2 row-start-1 min-w-0 shadow-lg pointer-events-auto">
-               <StatusPanel telemetry={telemetry} />
+               <StatusPanel telemetry={telemetry} isBackendConnected={isConnected} />
            </div>
            
            <div className="col-start-3 row-start-1 min-w-0 shadow-lg pointer-events-auto">
@@ -305,9 +311,11 @@ export default function HomePage() {
 
            {/* Bottom Row */}
            {/* col-1 empty - transparent to clicks because parent is pointer-events-none and this cell has no child */}
-           
+           <div className="col-start-1 row-start-2 min-w-0 h-50 pointer-events-auto self-end">
+               <YawPitchRollPanel telemetry={telemetry} />
+           </div>
            <div className="col-start-2 row-start-2 min-w-0 pointer-events-auto">
-               <LogPanel telemetry={telemetry} className="h-full w-full" />
+               <LogPanel telemetry={telemetry} isBackendConnected={isConnected} className="h-full w-full" />
            </div>
 
            <div className="col-start-3 row-start-2 min-w-0 shrink-0 shadow-lg pointer-events-auto">
