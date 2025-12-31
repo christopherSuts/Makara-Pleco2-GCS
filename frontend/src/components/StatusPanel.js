@@ -94,10 +94,10 @@ export default function StatusPanel({ telemetry, isBackendConnected }) {
           <span className="font-mono font-bold text-amv-white">{battVolts} V</span>
         </div>
            
-        <div className="bg-amv-black/30 border border-white/5 p-1.5 rounded-xl flex justify-between">
+        {/* <div className="bg-amv-black/30 border border-white/5 p-1.5 rounded-xl flex justify-between">
           <span>Killswitch:</span>
           <span className="text-amv-white/50 italic">SAFE (Sim)</span>
-        </div>
+        </div> */}
       </div>
     </div>
   );

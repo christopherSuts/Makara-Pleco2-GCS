@@ -22,7 +22,7 @@ import { pathToMissionItems } from "@/lib/missionWP";
 import { toast } from "react-toastify";
 
 export default function HomePage() {
-  const { telemetry, isConnected, send } = useTelemetry();
+  const { telemetry, isConnected, send, setMode } = useTelemetry();
   const asvPosition = telemetry.GLOBAL_POSITION_INT;
   const perimeter = usePerimeter(asvPosition);
   const boundaries = useBoundaries();
@@ -74,18 +74,17 @@ export default function HomePage() {
   };
 
   // Button Handlers
-  // Button Handlers
   const handleManual = () => { 
       console.log("Setting Mode: MANUAL"); 
-      send({ type: "SET_MODE", payload: { mode: "MANUAL" } });
+      setMode("MANUAL");
   };
   const handleAuto = () => { 
       console.log("Setting Mode: AUTO"); 
-      send({ type: "SET_MODE", payload: { mode: "AUTO" } });
+      setMode("AUTO");
   };
   const handleRTL = () => { 
       console.log("Setting Mode: RTL"); 
-      send({ type: "SET_MODE", payload: { mode: "RTL" } });
+      setMode("RTL");
   };
   const handleConnect = () => { console.log("Connect"); toast.info("Connect Clicked"); };
   const handleCloud = () => { console.log("Cloud"); toast.info("Cloud Clicked"); };

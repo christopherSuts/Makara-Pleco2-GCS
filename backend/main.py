@@ -30,6 +30,7 @@ JSON_LOG_FILE = None
 # Global handles so we can close them on shutdown
 _mav = None
 _reader_task: Optional[asyncio.Task] = None
+app_seq = 0  # Global application sequence counter
 
 # --- Unified emit helpers ---
 async def emit(obj: dict):
@@ -84,7 +85,6 @@ async def verify_mission_count(expected: int, timeout=5):
     except Exception as e:
         wslog("error", f"MISSION_VERIFY error: {e}")
         await emit({"type":"MISSION_VERIFY_ERROR","payload":{"message":str(e)}})
-
 
 async def upload_mission_items_int(items):
     """
@@ -232,10 +232,39 @@ async def handle_set_mode(payload: dict):
     except Exception as e:
         wslog("error", f"SET_MODE error: {e}")
 
+async def handle_command_long(payload: dict):
+    if _mav is None:
+        wslog("warn", "CMD_LONG: no connection")
+        return
+    try:
+        # Defaults
+        target_sys = _mav.target_system or 1
+        target_comp = _mav.target_component or 1
+        
+        cmd = int(payload.get("command", 0))
+        conf = int(payload.get("confirmation", 0))
+        p1 = float(payload.get("param1", 0))
+        p2 = float(payload.get("param2", 0))
+        p3 = float(payload.get("param3", 0))
+        p4 = float(payload.get("param4", 0))
+        p5 = float(payload.get("param5", 0))
+        p6 = float(payload.get("param6", 0))
+        p7 = float(payload.get("param7", 0))
+        
+        _mav.mav.command_long_send(
+            target_sys, target_comp,
+            cmd, conf,
+            p1, p2, p3, p4, p5, p6, p7
+        )
+        wslog("info", f"CMD_LONG {cmd} sent")
+    except Exception as e:
+        wslog("error", f"CMD_LONG error: {e}")
+
 HANDLERS = {
     "SET_HOME": handle_set_home,
     "MISSION_UPLOAD": handle_mission_upload,
     "SET_MODE": handle_set_mode,
+    "COMMAND_LONG": handle_command_long,
 }
 
 def _sanitize_numbers(x):
@@ -250,7 +279,6 @@ def _sanitize_numbers(x):
 
 def now_ts() -> str:
     return datetime.utcnow().isoformat() + "Z"
-
 
 def to_json_msg(msg) -> Dict[str, Any]:
     if msg is None:
@@ -301,14 +329,13 @@ async def broadcast(msg_json: str):
     for ws in to_remove:
         clients.discard(ws)
 
-
 async def mavlink_reader_loop(stop_event: asyncio.Event):
     """
     Listen for MAVLink UDP packets and broadcast JSON to websocket clients.
     Also prints GPS + attitude to console when available.
     The loop checks stop_event to exit cleanly on shutdown.
     """
-    global last_gps, last_att, _mav
+    global last_gps, last_att, _mav, app_seq
     uri = f"udpin:{MAVLINK_BIND}:{MAVLINK_PORT}"
     print("Starting MAVLink listener at", uri)
     try:
@@ -365,11 +392,48 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
                     except Exception as e:
                         print("[SET_HOME][ACK] broadcast error:", e)
 
+                elif cmd == 176: # MAV_CMD_DO_SET_MODE
+                    # MAV_RESULT_* values
+                    result_names = {
+                        0: "ACCEPTED",
+                        1: "TEMPORARILY_REJECTED",
+                        2: "DENIED",
+                        3: "UNSUPPORTED",
+                        4: "FAILED",
+                        5: "IN_PROGRESS",
+                    }
+                    res_str = result_names.get(res, str(res))
+                    print(f"[SET_MODE][ACK] result={res_str}")
+                    wslog("info", f"SET_MODE ACK: {res_str}")
+
+                    ack_msg = {
+                        "type": "SET_MODE_ACK",
+                        "payload": {"result": res_str}
+                    }
+                    try:
+                        await emit(ack_msg)
+                    except Exception as e:
+                        print("[SET_MODE][ACK] broadcast error:", e)
+
             if not msg:
                 continue
 
             # Convert and store latest for snapshot & WS
             j = to_json_msg(msg)
+
+            # --- Telemetry Injection ---
+            app_seq += 1
+            # master.mav_count counts packets that passed CRC
+            # master.mav_loss counts packets that failed CRC or were skipped (seq gap)
+            total_gen = getattr(_mav, 'mav_count', 0) + getattr(_mav, 'mav_loss', 0)
+            hw_loss = getattr(_mav, 'mav_loss', 0)
+
+            j["meta"] = {
+                "app_seq": app_seq,
+                "total_generated": total_gen,
+                "hw_loss": hw_loss
+            }
+            # ---------------------------
             latest_messages[j["type"]] = {"server_ts": j["server_ts"], "payload": j["payload"]}
             text = json.dumps(j, default=str)
 
@@ -416,7 +480,6 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
         pass
     print("MAVLink reader stopped.")
 
-
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
     await ws.accept()
@@ -446,7 +509,6 @@ async def websocket_endpoint(ws: WebSocket):
 async def snapshot():
     return latest_messages
 
-
 async def _serve():
     """
     Start the MAVLink reader and uvicorn server in the same asyncio loop.
@@ -475,7 +537,6 @@ async def _serve():
         await _reader_task
     print("Shutdown complete.")
 
-
 def main():
     """
     Entry point: runs the asyncio _serve coroutine and handles KeyboardInterrupt
@@ -489,7 +550,6 @@ def main():
         # If more forced cleanup is needed it can be added here.
     except Exception as e:
         print("Unhandled exception in main():", repr(e))
-
 
 if __name__ == "__main__":
     main()
