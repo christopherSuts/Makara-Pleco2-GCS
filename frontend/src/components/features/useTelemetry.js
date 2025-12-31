@@ -11,6 +11,7 @@ const RECONNECT_DELAY = 3000; // 3 seconds
 export function useTelemetry() {
   const [telemetry, setTelemetry] = useState({});
   const [isConnected, setIsConnected] = useState(false);
+  const [isExperimentActive, setIsExperimentActive] = useState(false); // Experiment state
   const wsRef = useRef(null);
   const reconnectTimer = useRef(null);
 
@@ -42,14 +43,32 @@ export function useTelemetry() {
     };
 
     console.log(`Downloading logs: ${packetLogRef.current.length} packets, ${latencyLogRef.current.length} latency samples.`);
-    downloadCSV(packetLogRef.current, "packet_loss_report_card.csv");
-    downloadCSV(latencyLogRef.current, "gcs_latency.csv");
+    downloadCSV(packetLogRef.current, `packet_loss_report_${Date.now()}.csv`);
+    downloadCSV(latencyLogRef.current, `gcs_latency_${Date.now()}.csv`);
+  }, []);
+
+  const startExperiment = useCallback(() => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "START_EXPERIMENT" }));
+    }
+  }, []);
+
+  const stopExperiment = useCallback(() => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "STOP_EXPERIMENT" }));
+    }
   }, []);
 
   useEffect(() => {
     window.downloadLogs = downloadLogs;
-    return () => { delete window.downloadLogs; };
-  }, [downloadLogs]);
+    window.startExperiment = startExperiment; // For console testing
+    window.stopExperiment = stopExperiment;
+    return () => { 
+        delete window.downloadLogs;
+        delete window.startExperiment;
+        delete window.stopExperiment;
+    };
+  }, [downloadLogs, startExperiment, stopExperiment]);
 
   useEffect(() => {
     const connect = () => {
@@ -62,9 +81,16 @@ export function useTelemetry() {
         try {
           const msg = JSON.parse(e.data);
 
-          // 1. Packet Loss Data Collection
-          // Middlewares injects "meta": { app_seq, total_generated, hw_loss }
-          if (msg.meta) {
+          // 1. Packet Loss Data Collection (Only if Experiment Active)
+          // Middlewares injects "meta" ...
+          // MODIFICATION: Actually, we probably want to log continually or only during experiment?
+          // User requested "Controlled Experiment". Let's restrict to isExperimentActive
+          // But isExperimentActive is a state, not a ref. We need a ref for the callback closure or use setState callback.
+          // For simplicity in this structure, we'll check the current value via a ref that tracks state.
+          // Wait, 'isExperimentActive' is used in the Effect dependency? No, that would re-connect.
+          // Simplest approach: Use a Ref for the active state to avoid re-triggering this effect.
+        
+          if (msg.meta && experimentActiveRef.current) {
             packetLogRef.current.push({
                 Arrival_Time: now,
                 App_Seq: msg.meta.app_seq,
@@ -73,16 +99,32 @@ export function useTelemetry() {
             });
           }
 
-          // 2. Latency Probe Measurement
-          // We sent MAV_CMD_REQUEST_MESSAGE(512) for AUTOPILOT_VERSION(148)
-          if (msg.type === "AUTOPILOT_VERSION" && probeSentTimeRef.current) {
+          // 2. Latency Probe Measurement (Only if Experiment Active)
+          if (msg.type === "AUTOPILOT_VERSION" && probeSentTimeRef.current && experimentActiveRef.current) {
               const latency = now - probeSentTimeRef.current;
               latencyLogRef.current.push({
                   Timestamp: now,
                   Latency_ms: latency
               });
-              probeSentTimeRef.current = null; // Reset
-              // console.debug("Latency Probe:", latency, "ms");
+              probeSentTimeRef.current = null; 
+          }
+
+          // EXPERIMENT EVENTS
+          if (msg.type === "EXPERIMENT_STARTED") {
+              console.log("Experiment Started!");
+              toast.info("Experiment STARTED ");
+              // Reset logs
+              packetLogRef.current = [];
+              latencyLogRef.current = [];
+              setIsExperimentActive(true);
+              experimentActiveRef.current = true;
+          }
+          if (msg.type === "EXPERIMENT_STOPPED") {
+              console.log("Experiment Stopped!");
+              toast.info("Experiment STOPPED. Downloading logs...");
+              setIsExperimentActive(false);
+              experimentActiveRef.current = false;
+              downloadLogs();
           }
 
           // Existing Logic
@@ -137,7 +179,10 @@ export function useTelemetry() {
         wsRef.current = null;
       }
     };
-  }, []);
+  }, [downloadLogs]); // Dependency on downloadLogs is fine as it uses useCallback
+
+  // Ref to track active state inside the WS callback without closure issues
+  const experimentActiveRef = useRef(false);
 
   // define OUTSIDE the effect; use the ref inside it
   const send = useCallback((obj) => {
@@ -154,22 +199,20 @@ export function useTelemetry() {
     send({ type: "SET_MODE", payload: { mode: modeName } });
   };
 
-  // --- Latency Probe Interval ---
+  // --- Latency Probe Interval (Only active when experiment is running) ---
   useEffect(() => {
       if (!isConnected) return;
 
       const timer = setInterval(() => {
-          // Send MAV_CMD_REQUEST_MESSAGE (512) -> Ask for AUTOPILOT_VERSION (148)
-          // Do not send if previous probe pending (timeout 2s) to avoid pileup? 
-          // Simple logic: just send.
-          
+          // Only send probe if experiment is active
+          if (!experimentActiveRef.current) return;
+
           probeSentTimeRef.current = Date.now();
           send({
               type: "COMMAND_LONG",
               payload: {
                   command: 512, // MAV_CMD_REQUEST_MESSAGE
                   param1: 148,  // AUTOPILOT_VERSION
-                  // others 0
               }
           });
       }, 1000); // 1.0 Hz
@@ -178,5 +221,5 @@ export function useTelemetry() {
   }, [isConnected, send]);
 
 
-  return { telemetry, isConnected, send, setMode };
+  return { telemetry, isConnected, send, setMode, isExperimentActive, startExperiment, stopExperiment };
 }
