@@ -3,6 +3,7 @@ import psutil
 import csv
 from datetime import datetime
 import os
+import sys
 
 # Configuration
 INTERVAL_SEC = 1.0
@@ -19,6 +20,10 @@ def get_network_bytes(interface):
     return 0, 0
 
 def main():
+    global OUTPUT_FILE
+    if len(sys.argv) > 1:
+        OUTPUT_FILE = sys.argv[1]
+    
     print(f"Starting Jetson Resource Logger. Output: {OUTPUT_FILE}")
     print(f"Monitoring Interface: {INTERFACE} at {INTERVAL_SEC}Hz")
 
