@@ -8,7 +8,7 @@ import sys
 # Configuration
 INTERVAL_SEC = 1.0
 OUTPUT_FILE = "jetson_resources.csv"
-INTERFACE = "eth0"
+INTERFACE = "eth0" # Change to wlan0 if using WiFi
 
 def get_network_bytes(interface):
     """

@@ -19,12 +19,10 @@ WS_HOST = "0.0.0.0"
 WS_PORT = 9000
 
 # Experiment Config
-IS_REMOTE_LOGGER = True # Set true for arch 1, false for arch 2
-# Example SSH command for Arch 1: ["ssh", "-o", "StrictHostKeyChecking=no", "jetson@192.168.1.100"]
-# Ensure SSH keys are set up so no password is required.
-REMOTE_SSH_CMD = ["ssh", "amv-onboard@10.10.10.3"] 
-# Full path to jetson_logger.py on the remote machine
-REMOTE_SCRIPT_PATH = "/home/amv-onboard/Makara-Pleco2-GCS/backend/jetson_logger.py"
+IS_REMOTE_LOGGER = False
+# Arch 2 (Edge): Logger runs locally on the same Jetson
+REMOTE_SSH_CMD = [] 
+REMOTE_SCRIPT_PATH = "jetson_logger.py"
 
 # Experiment Config
 EXPERIMENT_DURATION = 60  # Default 600s
@@ -37,8 +35,8 @@ latest_messages: Dict[str, Dict[str, Any]] = {}
 last_gps: Optional[Dict[str, float]] = None
 last_att: Optional[Dict[str, float]] = None
 
-# JSON_LOG_FILE = datetime.utcnow().strftime("telemetry-%Y%m%d.ndjson")
-JSON_LOG_FILE = None
+JSON_LOG_FILE = datetime.utcnow().strftime("telemetry-%Y%m%d.ndjson")
+# JSON_LOG_FILE = None
 
 # Global handles so we can close them on shutdown
 _mav = None
@@ -418,7 +416,9 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
     The loop checks stop_event to exit cleanly on shutdown.
     """
     global last_gps, last_att, _mav, app_seq
-    uri = f"udpin:{MAVLINK_BIND}:{MAVLINK_PORT}"
+    # Architecture 2: Direct Serial Connection
+    uri = "serial:/dev/ttyACM0:115200"
+    # uri = f"udpin:{MAVLINK_BIND}:{MAVLINK_PORT}"
     print("Starting MAVLink listener at", uri)
     try:
         # open a listener (udpin) - stores connection in global _mav for shutdown
