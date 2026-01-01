@@ -25,7 +25,7 @@ REMOTE_SSH_CMD = []
 REMOTE_SCRIPT_PATH = "jetson_logger.py"
 
 # Experiment Config
-EXPERIMENT_DURATION = 60  # Default 600s
+EXPERIMENT_DURATION = 600  # Default 600s
 
 app = FastAPI()
 clients: Set[WebSocket] = set()
@@ -417,12 +417,13 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
     """
     global last_gps, last_att, _mav, app_seq
     # Architecture 2: Direct Serial Connection
-    uri = "serial:/dev/ttyACM0:115200"
+    uri = "/dev/ttyACM0"
+    baud_rate = 115200
     # uri = f"udpin:{MAVLINK_BIND}:{MAVLINK_PORT}"
     print("Starting MAVLink listener at", uri)
     try:
         # open a listener (udpin) - stores connection in global _mav for shutdown
-        _mav = mavutil.mavlink_connection(uri, source_system=255)
+        _mav = mavutil.mavlink_connection(uri, baud=baud_rate)
     except Exception as e:
         print("Failed to open mavlink connection:", e)
         return

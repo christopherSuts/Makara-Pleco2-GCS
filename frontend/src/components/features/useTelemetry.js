@@ -5,7 +5,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { toast } from "react-toastify";
 
 // Your WebSocket server URL
-const WS_URL = "ws://localhost:9000/ws";
+const WS_URL = "ws://10.10.10.3:9000/ws";
 const RECONNECT_DELAY = 3000; // 3 seconds
 
 export function useTelemetry() {
