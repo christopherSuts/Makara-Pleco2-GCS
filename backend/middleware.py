@@ -13,8 +13,8 @@ import uvicorn
 from pymavlink import mavutil
 
 # CONFIG - edit if your MAVProxy uses a different bind/port
-MAVLINK_BIND = "0.0.0.0"   # listen on all interfaces
-MAVLINK_PORT = 14555       # match MAVProxy broadcast port
+uri = "/dev/ttyACM0"
+baud_rate = 115200
 WS_HOST = "0.0.0.0"
 WS_PORT = 9000
 
@@ -417,9 +417,6 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
     """
     global last_gps, last_att, _mav, app_seq
     # Architecture 2: Direct Serial Connection
-    uri = "/dev/ttyACM0"
-    baud_rate = 115200
-    # uri = f"udpin:{MAVLINK_BIND}:{MAVLINK_PORT}"
     print("Starting MAVLink listener at", uri)
     try:
         # open a listener (udpin) - stores connection in global _mav for shutdown
