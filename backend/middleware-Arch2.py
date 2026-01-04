@@ -11,7 +11,7 @@ import uvicorn
 from pymavlink import mavutil
 
 # CONFIG - edit if your MAVProxy uses a different bind/port
-uri = "/dev/ttyACM0"
+port = "/dev/ttyACM0"
 baud_rate = 115200
 WS_HOST = "0.0.0.0"
 WS_PORT = 9000
@@ -309,10 +309,10 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
     The loop checks stop_event to exit cleanly on shutdown.
     """
     global last_gps, last_att, _mav
-    print("Starting MAVLink listener at", uri)
+    print("Starting MAVLink listener at", port)
     try:
         # open a listener (udpin) - stores connection in global _mav for shutdown
-        _mav = mavutil.mavlink_connection(uri, baud=baud_rate)
+        _mav = mavutil.mavlink_connection(port, baud=baud_rate)
     except Exception as e:
         print("Failed to open mavlink connection:", e)
         return
