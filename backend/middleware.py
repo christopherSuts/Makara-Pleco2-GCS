@@ -25,7 +25,7 @@ REMOTE_SSH_CMD = []
 REMOTE_SCRIPT_PATH = "jetson_logger.py"
 
 # Experiment Config
-EXPERIMENT_DURATION = 600  # Default 600s
+EXPERIMENT_DURATION = 60  # Default 600s
 
 app = FastAPI()
 clients: Set[WebSocket] = set()
