@@ -133,6 +133,8 @@ export function useTelemetry() {
             console.log("SET_HOME ACK:", result);
             toast.success(`SET_HOME: ${result}`);
           }
+        
+          // Gajadi dipake, tp ini untuk ukur latency Mode Change
           if (msg.type === "SET_MODE_ACK") {
             const result = msg?.payload?.result ?? "UNKNOWN";
             const latencyMsg = modeChangeStartRef.current 
@@ -146,6 +148,7 @@ export function useTelemetry() {
             }
             modeChangeStartRef.current = null;
           }
+
           if (msg.type === "MISSION_UPLOAD_ACK") {
             toast.success(msg.payload?.message || "Mission upload OK");
           }

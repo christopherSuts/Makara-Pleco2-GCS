@@ -6,7 +6,7 @@ import os
 import sys
 
 # Configuration
-INTERVAL_SEC = 1.0
+INTERVAL_SEC = 0.1
 OUTPUT_FILE = "jetson_resources.csv"
 INTERFACE = "eth0"
 
@@ -25,13 +25,13 @@ def main():
         OUTPUT_FILE = sys.argv[1]
     
     print(f"Starting Jetson Resource Logger. Output: {OUTPUT_FILE}")
-    print(f"Monitoring Interface: {INTERFACE} at {INTERVAL_SEC}Hz")
+    print(f"Monitoring Interface: {INTERFACE} at {1.0/INTERVAL_SEC:.0f}Hz")
 
     # Initialize CSV if not exists
     file_exists = os.path.isfile(OUTPUT_FILE)
     
     with open(OUTPUT_FILE, mode='a', newline='') as csvfile:
-        fieldnames = ['Timestamp', 'CPU_Usage_%', 'RAM_Usage_%', 'Wifi_TX_Mbps', 'Wifi_RX_Mbps']
+        fieldnames = ['Timestamp', 'CPU_Usage_%', 'RAM_Usage_%', 'TX_Mbps', 'RX_Mbps']
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         
         if not file_exists:
@@ -81,8 +81,8 @@ def main():
                     'Timestamp': timestamp_str,
                     'CPU_Usage_%': f"{cpu_pct:.1f}",
                     'RAM_Usage_%': f"{ram_pct:.1f}",
-                    'Wifi_TX_Mbps': f"{tx_mbps:.2f}",
-                    'Wifi_RX_Mbps': f"{rx_mbps:.2f}"
+                    'TX_Mbps': f"{tx_mbps:.2f}",
+                    'RX_Mbps': f"{rx_mbps:.2f}"
                 }
                 
                 writer.writerow(row)

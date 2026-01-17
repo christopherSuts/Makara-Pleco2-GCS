@@ -300,6 +300,23 @@ export default function HomePage() {
         {/* Right Area Grid Layout */}
         <div className="absolute right-2 top-2 bottom-2 pointer-events-none grid grid-cols-[330px_220px_220px] grid-rows-2 gap-2">
            {/* Top Row */}
+           <div className="col-start-1 row-start-1 min-w-0 pointer-events-auto flex justify-end items-center px-4">
+               <button 
+                 onClick={() => {
+                   if (typeof window.startExperiment === 'function') {
+                      window.startExperiment();
+                      toast.info("Experiment Started!");
+                   } else {
+                      console.warn("window.startExperiment not defind");
+                      toast.error("Experiment function missing");
+                   }
+                 }}
+                 className="bg-red-600/90 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-xl shadow-[0_0_15px_rgba(220,38,38,0.5)] border border-white/20 backdrop-blur-sm transition-all active:scale-95"
+               >
+                 START TEST
+               </button>
+           </div>
+
            <div className="col-start-2 row-start-1 min-w-0 shadow-lg pointer-events-auto">
                <StatusPanel telemetry={telemetry} isBackendConnected={isConnected} />
            </div>
