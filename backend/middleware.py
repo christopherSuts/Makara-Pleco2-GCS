@@ -35,8 +35,8 @@ latest_messages: Dict[str, Dict[str, Any]] = {}
 last_gps: Optional[Dict[str, float]] = None
 last_att: Optional[Dict[str, float]] = None
 
-JSON_LOG_FILE = datetime.utcnow().strftime("telemetry-%Y%m%d.ndjson")
-# JSON_LOG_FILE = None
+# JSON_LOG_FILE = datetime.utcnow().strftime("telemetry-%Y%m%d.ndjson")
+JSON_LOG_FILE = None
 
 # Global handles so we can close them on shutdown
 _mav = None
