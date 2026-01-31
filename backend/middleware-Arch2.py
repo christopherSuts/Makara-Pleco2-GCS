@@ -27,9 +27,15 @@ last_att: Optional[Dict[str, float]] = None
 # JSON_LOG_FILE = datetime.utcnow().strftime("telemetry-%Y%m%d.ndjson")
 JSON_LOG_FILE = None
 
+# Coordinate + echosounder log (NDJSON). Set to None to disable.
+COORD_ECHO_LOG_FILE = "coord_echosounder.ndjson"
+
 # Global handles so we can close them on shutdown
 _mav = None
 _reader_task: Optional[asyncio.Task] = None
+
+# Last known echosounder depth (meters)
+last_depth_m: Optional[float] = None
 
 # --- Unified emit helpers ---
 async def emit(obj: dict):
@@ -251,6 +257,37 @@ def _sanitize_numbers(x):
 def now_ts() -> str:
     return datetime.utcnow().isoformat() + "Z"
 
+def append_coord_echo_log(lat: float, lon: float, alt: float, depth_m: Optional[float], source: str):
+    # Append a NDJSON record for coordinate + echosounder depth
+    if COORD_ECHO_LOG_FILE is None:
+        return
+    try:
+        record = {
+            "ts": now_ts(),
+            "lat": lat,
+            "lon": lon,
+            "alt_m": alt,
+            "depth_m": depth_m,
+            "source": source,
+        }
+        with open(COORD_ECHO_LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception as e:
+        print("Coord/Echo log write error:", e)
+
+def extract_depth_m(msg) -> Optional[float]:
+    # Extract depth in meters from MAVLink DISTANCE_SENSOR message if available
+    try:
+        if msg.get_type() != "DISTANCE_SENSOR":
+            return None
+        dist_cm = getattr(msg, "current_distance", None)
+        if dist_cm is None:
+            return None
+        depth = float(dist_cm) / 100.0
+        return depth if math.isfinite(depth) else None
+    except Exception:
+        return None
+
 
 def to_json_msg(msg) -> Dict[str, Any]:
     if msg is None:
@@ -308,7 +345,7 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
     Also prints GPS + attitude to console when available.
     The loop checks stop_event to exit cleanly on shutdown.
     """
-    global last_gps, last_att, _mav
+    global last_gps, last_att, last_depth_m, _mav
     print("Starting MAVLink listener at", port)
     try:
         # open a listener (udpin) - stores connection in global _mav for shutdown
@@ -332,6 +369,9 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
                 None,  # Use the default ThreadPoolExecutor
                 blocking_recv
             )
+
+            if msg is None:
+                continue
 
             if msg.get_type() == "COMMAND_ACK":
                 try:
@@ -364,8 +404,18 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
                     except Exception as e:
                         print("[SET_HOME][ACK] broadcast error:", e)
 
-            if not msg:
-                continue
+            # Update depth from echosounder (if message present)
+            depth = extract_depth_m(msg)
+            if depth is not None:
+                last_depth_m = depth
+                if last_gps:
+                    append_coord_echo_log(
+                        last_gps.get("lat"),
+                        last_gps.get("lon"),
+                        last_gps.get("alt"),
+                        last_depth_m,
+                        source="DISTANCE_SENSOR",
+                    )
 
             # Convert and store latest for snapshot & WS
             j = to_json_msg(msg)
@@ -386,6 +436,14 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
             if j["type"] == "GLOBAL_POSITION_INT":
                 p = j["payload"]
                 last_gps = {"lat": p.get("lat"), "lon": p.get("lon"), "alt": p.get("alt")}
+                if last_gps.get("lat") is not None and last_gps.get("lon") is not None:
+                    append_coord_echo_log(
+                        last_gps.get("lat"),
+                        last_gps.get("lon"),
+                        last_gps.get("alt"),
+                        last_depth_m,
+                        source="GLOBAL_POSITION_INT",
+                    )
             elif j["type"] == "ATTITUDE":
                 p = j["payload"]
                 last_att = {"roll": p.get("roll"), "pitch": p.get("pitch"), "yaw": p.get("yaw")}
