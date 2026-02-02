@@ -219,6 +219,13 @@ function packetToFrontendJson(packet) {
         payload.alt = (payload.alt || 0) / 1000.0;
     }
     
+    // Handle DISTANCE_SENSOR (rangefinder)
+    if (typeUpper === 'DISTANCE_SENSOR') {
+        payload.current_distance = (payload.current_distance || 0) / 100.0; // cm to meters
+        payload.min_distance = (payload.min_distance || 0) / 100.0;
+        payload.max_distance = (payload.max_distance || 0) / 100.0;
+    }
+    
     return {
         type: typeUpper,
         server_ts: new Date().toISOString(),

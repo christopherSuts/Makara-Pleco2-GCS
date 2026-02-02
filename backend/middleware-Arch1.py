@@ -23,6 +23,7 @@ latest_messages: Dict[str, Dict[str, Any]] = {}
 # keep last known values for printing
 last_gps: Optional[Dict[str, float]] = None
 last_att: Optional[Dict[str, float]] = None
+last_rangefinder: Optional[Dict[str, float]] = None
 
 # JSON_LOG_FILE = datetime.utcnow().strftime("telemetry-%Y%m%d.ndjson")
 JSON_LOG_FILE = None
@@ -280,6 +281,21 @@ def to_json_msg(msg) -> Dict[str, Any]:
                 "voltage_battery": getattr(msg, "voltage_battery", None),
                 "battery_remaining": getattr(msg, "battery_remaining", None),
             }
+        elif mtype == "DISTANCE_SENSOR":
+            # DISTANCE_SENSOR is the modern message for rangefinders
+            base["payload"] = {
+                "current_distance": getattr(msg, "current_distance", 0) / 100.0,  # cm to meters
+                "min_distance": getattr(msg, "min_distance", 0) / 100.0,
+                "max_distance": getattr(msg, "max_distance", 0) / 100.0,
+                "type": getattr(msg, "type", 0),
+                "id": getattr(msg, "id", 0),
+            }
+        elif mtype == "RANGEFINDER":
+            # Legacy RANGEFINDER message (if used)
+            base["payload"] = {
+                "distance": getattr(msg, "distance", 0.0),
+                "voltage": getattr(msg, "voltage", 0.0),
+            }
         else:
             d = msg.to_dict()
             d.pop("payload", None)
@@ -383,13 +399,19 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
             # broadcast to websockets
             await broadcast(text)
 
-            # Update last_gps / last_att and print combined line
+            # Update last_gps / last_att / last_rangefinder and print combined line
             if j["type"] == "GLOBAL_POSITION_INT":
                 p = j["payload"]
                 last_gps = {"lat": p.get("lat"), "lon": p.get("lon"), "alt": p.get("alt")}
             elif j["type"] == "ATTITUDE":
                 p = j["payload"]
                 last_att = {"roll": p.get("roll"), "pitch": p.get("pitch"), "yaw": p.get("yaw")}
+            elif j["type"] == "DISTANCE_SENSOR":
+                p = j["payload"]
+                last_rangefinder = {"distance": p.get("current_distance"), "type": p.get("type")}
+            elif j["type"] == "RANGEFINDER":
+                p = j["payload"]
+                last_rangefinder = {"distance": p.get("distance"), "type": "legacy"}
 
             # Print output if we have at least one of them (prints both if both available)
             if last_gps or last_att:
