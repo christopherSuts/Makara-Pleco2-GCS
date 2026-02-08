@@ -5,6 +5,8 @@ import functools  # <--- CHANGED
 from datetime import datetime
 from typing import Dict, Any, Set, Optional
 
+import serial
+from serial.tools import list_ports
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import uvicorn
 
@@ -15,6 +17,8 @@ MAVLINK_BIND = "0.0.0.0"   # listen on all interfaces
 MAVLINK_PORT = 14555       # match MAVProxy broadcast port
 WS_HOST = "0.0.0.0"
 WS_PORT = 9000
+SERIAL_BAUD = 115200
+SERIAL_PORT = None 
 
 app = FastAPI()
 clients: Set[WebSocket] = set()
@@ -28,8 +32,8 @@ last_rangefinder: Optional[Dict[str, float]] = None
 # JSON_LOG_FILE = datetime.utcnow().strftime("telemetry-%Y%m%d.ndjson")
 JSON_LOG_FILE = None
 
-# Coordinate + echosounder log (NDJSON). Set to None to disable.
-COORD_ECHO_LOG_FILE = "coord_echosounder.ndjson"
+# Coordinate + rangefinder log folder (date-based files, e.g., path_logs/2026-02-08.txt). Set to None to disable.
+COORD_ECHO_LOG_FOLDER = "path_logs"
 
 # Global handles so we can close them on shutdown
 _mav = None
@@ -37,6 +41,67 @@ _reader_task: Optional[asyncio.Task] = None
 
 # Last known echosounder depth (meters)
 last_depth_m: Optional[float] = None
+
+def find_serial_port() -> Optional[str]:
+    for p in list_ports.comports():
+        if "usbmodem" in p.device or "usbserial" in p.device:
+            return p.device.replace("/dev/tty.", "/dev/cu.")
+    return None
+
+async def serial_reader_loop(stop_event: asyncio.Event):
+    global SERIAL_PORT
+
+    SERIAL_PORT = find_serial_port()
+    if SERIAL_PORT is None:
+        wslog("error", "SERIAL: no device found")
+        return
+
+    wslog("info", f"SERIAL: connecting to {SERIAL_PORT}")
+
+    try:
+        ser = serial.Serial(SERIAL_PORT, SERIAL_BAUD, timeout=1)
+        await asyncio.sleep(2)
+    except Exception as e:
+        wslog("error", f"SERIAL open failed: {e}")
+        return
+
+    loop = asyncio.get_running_loop()
+
+    def blocking_read():
+        try:
+            return ser.readline()
+        except Exception:
+            return b""
+
+    while not stop_event.is_set():
+        try:
+            line = await loop.run_in_executor(None, blocking_read)
+            if not line:
+                continue
+
+            text = line.decode("utf-8", errors="ignore").strip()
+
+            data = {
+                "type": "SERIAL_DATA",
+                "payload": {
+                    "ts": now_ts(),
+                    "port": SERIAL_PORT,
+                    "raw": text,
+                }
+            }
+
+            await emit(data)
+
+        except Exception as e:
+            wslog("error", f"SERIAL read error: {e}")
+            await asyncio.sleep(0.2)
+
+    try:
+        ser.close()
+    except Exception:
+        pass
+
+    wslog("info", "SERIAL reader stopped")
 
 # --- Unified emit helpers ---
 async def emit(obj: dict):
@@ -258,23 +323,32 @@ def _sanitize_numbers(x):
 def now_ts() -> str:
     return datetime.utcnow().isoformat() + "Z"
 
-def append_coord_echo_log(lat: float, lon: float, alt: float, depth_m: Optional[float], source: str):
-    # Append a NDJSON record for coordinate + echosounder depth
-    if COORD_ECHO_LOG_FILE is None:
+def append_coord_echo_log(lat: float, lon: float, alt: float, depth_m: Optional[float]):
+    # Append a JSON record to date-based file in path_logs folder
+    if COORD_ECHO_LOG_FOLDER is None:
         return
     try:
+        import os
+        # Create folder if it doesn't exist
+        os.makedirs(COORD_ECHO_LOG_FOLDER, exist_ok=True)
+        
+        # Get today's date and create filename
+        date_str = datetime.utcnow().strftime("%Y-%m-%d")
+        log_file = os.path.join(COORD_ECHO_LOG_FOLDER, f"{date_str}.txt")
+        
         record = {
             "ts": now_ts(),
             "lat": lat,
             "lon": lon,
             "alt_m": alt,
             "depth_m": depth_m,
-            "source": source,
         }
-        with open(COORD_ECHO_LOG_FILE, "a", encoding="utf-8") as f:
+        with open(log_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        wslog("debug", f"Coord/Rangefinder logged to {log_file}")
     except Exception as e:
-        print("Coord/Echo log write error:", e)
+        print("Coord/Rangefinder log write error:", e)
+        wslog("error", f"Coord/Rangefinder log write error: {e}")
 
 def extract_depth_m(msg) -> Optional[float]:
     # Extract depth in meters from MAVLink DISTANCE_SENSOR message if available
@@ -421,18 +495,10 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
                     except Exception as e:
                         print("[SET_HOME][ACK] broadcast error:", e)
 
-            # Update depth from echosounder (if message present)
+            # Update depth from rangefinder (if message present)
             depth = extract_depth_m(msg)
             if depth is not None:
                 last_depth_m = depth
-                if last_gps:
-                    append_coord_echo_log(
-                        last_gps.get("lat"),
-                        last_gps.get("lon"),
-                        last_gps.get("alt"),
-                        last_depth_m,
-                        source="DISTANCE_SENSOR",
-                    )
 
             # Convert and store latest for snapshot & WS
             j = to_json_msg(msg)
@@ -454,12 +520,12 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
                 p = j["payload"]
                 last_gps = {"lat": p.get("lat"), "lon": p.get("lon"), "alt": p.get("alt")}
                 if last_gps.get("lat") is not None and last_gps.get("lon") is not None:
+                    # Log GPS with current depth (from RANGEFINDER)
                     append_coord_echo_log(
                         last_gps.get("lat"),
                         last_gps.get("lon"),
                         last_gps.get("alt"),
                         last_depth_m,
-                        source="GLOBAL_POSITION_INT",
                     )
             elif j["type"] == "ATTITUDE":
                 p = j["payload"]
@@ -467,9 +533,11 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
             elif j["type"] == "DISTANCE_SENSOR":
                 p = j["payload"]
                 last_rangefinder = {"distance": p.get("current_distance"), "type": p.get("type")}
+                last_depth_m = p.get("current_distance")
             elif j["type"] == "RANGEFINDER":
                 p = j["payload"]
                 last_rangefinder = {"distance": p.get("distance"), "type": "legacy"}
+                last_depth_m = p.get("distance")
 
             # Print output if we have at least one of them (prints both if both available)
             if last_gps or last_att:
@@ -528,31 +596,23 @@ async def snapshot():
 
 
 async def _serve():
-    """
-    Start the MAVLink reader and uvicorn server in the same asyncio loop.
-    This coroutine returns when server finishes.
-    """
     global _reader_task
     stop_event = asyncio.Event()
 
-    # start the reader task
     _reader_task = asyncio.create_task(mavlink_reader_loop(stop_event))
-    print("MAVLink background reader task started.")
+    serial_task = asyncio.create_task(serial_reader_loop(stop_event))
 
-    # configure and start uvicorn server programmatically
+    print("Background tasks started (MAVLink + Serial).")
+
     config = uvicorn.Config(app, host=WS_HOST, port=WS_PORT, log_level="info")
     server = uvicorn.Server(config)
 
-    # run the server; server.serve() returns when server stops
     await server.serve()
 
-    # server stopped — signal reader to stop
-    print("Uvicorn server stopped; signaling reader to stop.")
+    print("Uvicorn stopped; shutting down background tasks.")
     stop_event.set()
 
-    # wait for reader to finish
-    if _reader_task:
-        await _reader_task
+    await asyncio.gather(_reader_task, serial_task, return_exceptions=True)
     print("Shutdown complete.")
 
 
