@@ -1,5 +1,0 @@
-- integrate perimeter dengan pergerakan riil
-- generate jalur based on boundary
-- add emergency REST for RTL mode & change to manual mode
-- send WP mission 
-- status misi (total brapa meter yg harus ditempuh)
