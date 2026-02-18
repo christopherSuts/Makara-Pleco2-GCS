@@ -11,6 +11,19 @@ The project is divided into two main components:
     - `middleware-Arch2.py`: Middleware for Architecture 2 (Edge-Based / Onboard).
 - **`frontend/`**: A Next.js web application that serves as the operator interface.
 
+## System Architecture
+
+The following diagram illustrates the two supported network architectures for the Makara-Pleco2 system:
+
+![System Architecture Diagram](architecture_diagram.png)
+
+### Architecture 1: Ground-Based Middleware
+In this configuration, the heavy lifting (middleware) occurs on the Ground Control Station (GCS). The vehicle's onboard computer (Jetson) acts as a simple router, forwarding MAVLink packets via `mavlink-router` to the GCS. This is useful for development and debugging the middleware without deploying to the edge.
+
+### Architecture 2: Edge-Based Middleware
+In this configuration, the middleware runs directly on the vehicle's onboard computer (Jetson). The GCS frontend connects specifically to the middleware's API. This reduces bandwidth usage as only processed telemetry/video needs to be sent, making it the preferred setup for production/deployment.
+
+
 ## Prerequisites
 
 - **Network Configuration**:
