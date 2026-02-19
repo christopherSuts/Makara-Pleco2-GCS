@@ -137,6 +137,9 @@ export default function BathymetryModal({ open, onClose, handleGetPathLogList, h
         canvasContainerRef.current.innerHTML = "";
         canvasContainerRef.current.appendChild(renderer.domElement);
         const controls = new OrbitControls(camera, renderer.domElement);
+        controls.listenToKeyEvents(canvasContainerRef.current);
+
+        canvasContainerRef.current.focus();
 
         // --- GEOMETRY GENERATION (Geodesy) ---
         const centerLon = (bbox[0] + bbox[2]) / 2;
@@ -271,7 +274,7 @@ export default function BathymetryModal({ open, onClose, handleGetPathLogList, h
                     </div>
 
                     {/* ThreeJS-Managed Canvas Container */}
-                    <div ref={canvasContainerRef} className="absolute inset-0 z-0" />
+                    <div ref={canvasContainerRef} tabIndex={0} onKeyDown={(e) => e.stopPropagation()} className="absolute inset-0 z-0" />
                 </div>
             </div>
         </div>
