@@ -5,6 +5,8 @@ import functools  # <--- CHANGED
 from datetime import datetime
 from typing import Dict, Any, Set, Optional
 
+import os
+
 import serial
 from serial.tools import list_ports
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -13,12 +15,12 @@ import uvicorn
 from pymavlink import mavutil
 
 # CONFIG - edit if your MAVProxy uses a different bind/port
-MAVLINK_BIND = "0.0.0.0"   # listen on all interfaces
-MAVLINK_PORT = 14555       # match MAVProxy broadcast port
+MAVLINK_BIND = "0.0.0.0"  # listen on all interfaces
+MAVLINK_PORT = 14555  # match MAVProxy broadcast port
 WS_HOST = "0.0.0.0"
 WS_PORT = 9000
 SERIAL_BAUD = 115200
-SERIAL_PORT = None 
+SERIAL_PORT = None
 
 app = FastAPI()
 clients: Set[WebSocket] = set()
@@ -42,11 +44,13 @@ _reader_task: Optional[asyncio.Task] = None
 # Last known echosounder depth (meters)
 last_depth_m: Optional[float] = None
 
+
 def find_serial_port() -> Optional[str]:
     for p in list_ports.comports():
         if "usbmodem" in p.device or "usbserial" in p.device:
             return p.device.replace("/dev/tty.", "/dev/cu.")
     return None
+
 
 async def serial_reader_loop(stop_event: asyncio.Event):
     global SERIAL_PORT
@@ -87,7 +91,7 @@ async def serial_reader_loop(stop_event: asyncio.Event):
                     "ts": now_ts(),
                     "port": SERIAL_PORT,
                     "raw": text,
-                }
+                },
             }
 
             await emit(data)
@@ -103,6 +107,7 @@ async def serial_reader_loop(stop_event: asyncio.Event):
 
     wslog("info", "SERIAL reader stopped")
 
+
 # --- Unified emit helpers ---
 async def emit(obj: dict):
     """Serialize a dict and broadcast (awaits)."""
@@ -112,6 +117,7 @@ async def emit(obj: dict):
     except Exception as e:
         print("emit() error:", e)
 
+
 def emit_nowait(obj: dict):
     """Serialize + schedule broadcast without blocking caller."""
     try:
@@ -120,21 +126,32 @@ def emit_nowait(obj: dict):
     except Exception as e:
         print("emit_nowait() error:", e)
 
+
 def _now():
     from datetime import datetime, timezone
+
     return datetime.now(timezone.utc).isoformat()
 
+
 def wslog(level: str, msg: str):
-    data = {"type": "WS_LOG",
-            "payload": {"ts": _now(), "level": str(level), "msg": str(msg)}}
+    data = {
+        "type": "WS_LOG",
+        "payload": {"ts": _now(), "level": str(level), "msg": str(msg)},
+    }
     emit_nowait(data)
+
 
 async def verify_mission_count(expected: int, timeout=5):
     """Request the mission list and compare count; logs result via wslog + emits VERIFY messages."""
     if _mav is None:
-        await emit({"type":"MISSION_VERIFY_ERROR","payload":{"message":"No MAVLink connection"}})
+        await emit(
+            {
+                "type": "MISSION_VERIFY_ERROR",
+                "payload": {"message": "No MAVLink connection"},
+            }
+        )
         return
-    target_sys  = _mav.target_system or 1
+    target_sys = _mav.target_system or 1
     target_comp = _mav.target_component or 1
 
     try:
@@ -142,20 +159,33 @@ async def verify_mission_count(expected: int, timeout=5):
             target_sys, target_comp, mavutil.mavlink.MAV_MISSION_TYPE_MISSION
         )
         wslog("info", "MISSION_VERIFY: request list")
-        msg = _mav.recv_match(type=['MISSION_COUNT'], blocking=True, timeout=timeout)
+        msg = _mav.recv_match(type=["MISSION_COUNT"], blocking=True, timeout=timeout)
         if msg is None:
             raise TimeoutError("Timeout waiting for MISSION_COUNT")
-        count = int(getattr(msg, 'count', 0))
+        count = int(getattr(msg, "count", 0))
         print(f"[MISSION] VERIFY count={count}, expected={expected}")
         if count == expected:
             wslog("info", f"MISSION saved on FCU (count={count})")
-            await emit({"type":"MISSION_VERIFY_RESULT","payload":{"ok":True,"count":count}})
+            await emit(
+                {
+                    "type": "MISSION_VERIFY_RESULT",
+                    "payload": {"ok": True, "count": count},
+                }
+            )
         else:
             wslog("warn", f"MISSION count mismatch: FCU={count} expected={expected}")
-            await emit({"type":"MISSION_VERIFY_RESULT","payload":{"ok":False,"reason":f'Count mismatch FCU={count} expected={expected}'}})
+            await emit(
+                {
+                    "type": "MISSION_VERIFY_RESULT",
+                    "payload": {
+                        "ok": False,
+                        "reason": f"Count mismatch FCU={count} expected={expected}",
+                    },
+                }
+            )
     except Exception as e:
         wslog("error", f"MISSION_VERIFY error: {e}")
-        await emit({"type":"MISSION_VERIFY_ERROR","payload":{"message":str(e)}})
+        await emit({"type": "MISSION_VERIFY_ERROR", "payload": {"message": str(e)}})
 
 
 async def upload_mission_items_int(items):
@@ -167,16 +197,26 @@ async def upload_mission_items_int(items):
     """
     if _mav is None:
         wslog("error", "MISSION_UPLOAD: no MAVLink connection")
-        await emit({"type":"MISSION_UPLOAD_ERROR","payload":{"message":"No MAVLink connection"}})
+        await emit(
+            {
+                "type": "MISSION_UPLOAD_ERROR",
+                "payload": {"message": "No MAVLink connection"},
+            }
+        )
         return
 
     try:
         total = len(items)
-        target_sys  = _mav.target_system or 1
+        target_sys = _mav.target_system or 1
         target_comp = _mav.target_component or 1
 
         wslog("info", f"MISSION_UPLOAD start: {total} items")
-        await emit({"type":"MISSION_UPLOAD_PROGRESS","payload":{"step":"START","total":total}})
+        await emit(
+            {
+                "type": "MISSION_UPLOAD_PROGRESS",
+                "payload": {"step": "START", "total": total},
+            }
+        )
 
         # Send how many items will follow
         _mav.mav.mission_count_send(
@@ -184,59 +224,107 @@ async def upload_mission_items_int(items):
         )
         print(f"[MISSION] COUNT sent: {total}")
         wslog("info", f"MISSION COUNT sent: {total}")
-        await emit({"type":"MISSION_UPLOAD_PROGRESS","payload":{"step":"COUNT_SENT","total":total}})
+        await emit(
+            {
+                "type": "MISSION_UPLOAD_PROGRESS",
+                "payload": {"step": "COUNT_SENT", "total": total},
+            }
+        )
 
         # Serve each request from FCU
         while True:
             msg = _mav.recv_match(
-                type=['MISSION_REQUEST_INT','MISSION_REQUEST','MISSION_ACK'],
-                blocking=True, timeout=10
+                type=["MISSION_REQUEST_INT", "MISSION_REQUEST", "MISSION_ACK"],
+                blocking=True,
+                timeout=10,
             )
             if msg is None:
                 raise TimeoutError("Timeout waiting for MISSION_REQUEST/ACK")
 
             mtype = msg.get_type()
 
-            if mtype in ('MISSION_REQUEST_INT','MISSION_REQUEST'):
-                req_seq = int(getattr(msg, 'seq', 0))
+            if mtype in ("MISSION_REQUEST_INT", "MISSION_REQUEST"):
+                req_seq = int(getattr(msg, "seq", 0))
                 if req_seq < 0 or req_seq >= total:
                     raise ValueError(f"Requested bad seq {req_seq}")
 
                 it = items[req_seq]
                 _mav.mav.mission_item_int_send(
-                    target_sys, target_comp,
-                    int(it['seq']), int(it['frame']), int(it['command']),
-                    int(it.get('current', 0)), int(it.get('autocontinue', 1)),
-                    float(it.get('param1', 0.0)), float(it.get('param2', 0.0)),
-                    float(it.get('param3', 0.0)), float(it.get('param4', 0.0)),
-                    int(it['x']), int(it['y']), float(it['z']),
-                    mavutil.mavlink.MAV_MISSION_TYPE_MISSION
+                    target_sys,
+                    target_comp,
+                    int(it["seq"]),
+                    int(it["frame"]),
+                    int(it["command"]),
+                    int(it.get("current", 0)),
+                    int(it.get("autocontinue", 1)),
+                    float(it.get("param1", 0.0)),
+                    float(it.get("param2", 0.0)),
+                    float(it.get("param3", 0.0)),
+                    float(it.get("param4", 0.0)),
+                    int(it["x"]),
+                    int(it["y"]),
+                    float(it["z"]),
+                    mavutil.mavlink.MAV_MISSION_TYPE_MISSION,
                 )
                 print(f"[MISSION] ITEM_INT sent: seq={req_seq}")
                 wslog("info", f"MISSION ITEM sent: {req_seq}/{total}")
-                await emit({"type":"MISSION_UPLOAD_PROGRESS","payload":{"step":"ITEM_SENT","index":req_seq,"total":total}})
+                await emit(
+                    {
+                        "type": "MISSION_UPLOAD_PROGRESS",
+                        "payload": {
+                            "step": "ITEM_SENT",
+                            "index": req_seq,
+                            "total": total,
+                        },
+                    }
+                )
 
-            elif mtype == 'MISSION_ACK':
-                result = int(getattr(msg, 'type', 0))
-                names = {0:"ACCEPTED",1:"ERROR",2:"UNSUPPORTED",3:"NO_SPACE",4:"INVALID",5:"INVALID_PARAM",6:"FAILED"}
+            elif mtype == "MISSION_ACK":
+                result = int(getattr(msg, "type", 0))
+                names = {
+                    0: "ACCEPTED",
+                    1: "ERROR",
+                    2: "UNSUPPORTED",
+                    3: "NO_SPACE",
+                    4: "INVALID",
+                    5: "INVALID_PARAM",
+                    6: "FAILED",
+                }
                 human = names.get(result, result)
                 print(f"[MISSION] ACK: {human}")
                 if result == 0:
                     wslog("info", f"MISSION ACK: {human}")
-                    await emit({"type":"MISSION_UPLOAD_ACK","payload":{"ok":True,"message":f"Mission upload {human}","count":total}})
+                    await emit(
+                        {
+                            "type": "MISSION_UPLOAD_ACK",
+                            "payload": {
+                                "ok": True,
+                                "message": f"Mission upload {human}",
+                                "count": total,
+                            },
+                        }
+                    )
                     # quick verification: re-read count from FCU
                     asyncio.get_event_loop().create_task(verify_mission_count(total))
                 else:
                     wslog("error", f"MISSION ACK: {human}")
-                    await emit({"type":"MISSION_UPLOAD_ERROR","payload":{"message":f"Mission ACK: {human}"}})
+                    await emit(
+                        {
+                            "type": "MISSION_UPLOAD_ERROR",
+                            "payload": {"message": f"Mission ACK: {human}"},
+                        }
+                    )
                 break
 
     except Exception as e:
         print("[MISSION] upload error:", e)
         wslog("error", f"MISSION_UPLOAD error: {e}")
-        await emit({"type":"MISSION_UPLOAD_ERROR","payload":{"message":str(e)}})
+        await emit({"type": "MISSION_UPLOAD_ERROR", "payload": {"message": str(e)}})
 
-def send_set_home(lat: float = 0.0, lon: float = 0.0, alt: float = 0.0, use_current: bool = False):
+
+def send_set_home(
+    lat: float = 0.0, lon: float = 0.0, alt: float = 0.0, use_current: bool = False
+):
     """
     Send MAV_CMD_DO_SET_HOME (179).
     If use_current=True, vehicle uses its current position and lat/lon/alt are ignored by firmware.
@@ -248,40 +336,50 @@ def send_set_home(lat: float = 0.0, lon: float = 0.0, alt: float = 0.0, use_curr
     try:
         # CMD_LONG: target_system, target_component, command, confirmation, param1..param7
         # param1 = use_current (1) or specified (0)
-        wslog("info", f"SET_HOME sending use_current={use_current} lat={lat:.7f} lon={lon:.7f} alt={alt:.2f}")
+        wslog(
+            "info",
+            f"SET_HOME sending use_current={use_current} lat={lat:.7f} lon={lon:.7f} alt={alt:.2f}",
+        )
         _mav.mav.command_long_send(
             _mav.target_system or 1,
             _mav.target_component or 1,
             179,  # MAV_CMD_DO_SET_HOME
             0,
             1.0 if use_current else 0.0,  # param1
-            0, 0, 0,                      # param2..4 unused
-            float(lat),                   # param5 (x) latitude
-            float(lon),                   # param6 (y) longitude
-            float(alt)                    # param7 (z) altitude (AMSL or rel depending on FW)
+            0,
+            0,
+            0,  # param2..4 unused
+            float(lat),  # param5 (x) latitude
+            float(lon),  # param6 (y) longitude
+            float(alt),  # param7 (z) altitude (AMSL or rel depending on FW)
         )
-        print(f"SET_HOME sent (use_current={use_current}, lat={lat}, lon={lon}, alt={alt})")
+        print(
+            f"SET_HOME sent (use_current={use_current}, lat={lat}, lon={lon}, alt={alt})"
+        )
         wslog("info", "SET_HOME command_long_send dispatched")
     except Exception as e:
         print("SET_HOME error:", e)
         wslog("error", f"SET_HOME send error: {e}")
 
+
 # --- Inbound message handlers ---
-async def handle_set_home(payload: dict):
+async def handle_set_home(ws, payload: dict):
     use_current = bool(payload.get("use_current", False))
     lat = payload.get("lat", 0.0)
     lon = payload.get("lon", 0.0)
     alt = payload.get("alt", 0.0)
     send_set_home(lat, lon, alt, use_current=use_current)
 
-async def handle_mission_upload(payload: dict):
+
+async def handle_mission_upload(ws, payload: dict):
     # Expect payload.items: list of MISSION_ITEM_INT-like dicts (seq, frame, command, x, y, z, param1..4)
     items = payload.get("items") or []
     # spawn your uploader without blocking
-    
+
     asyncio.get_event_loop().create_task(upload_mission_items_int(items))
 
-async def handle_set_mode(payload: dict):
+
+async def handle_set_mode(ws, payload: dict):
     mode_name = str(payload.get("mode", "")).upper()
     if not mode_name or _mav is None:
         wslog("warn", f"SET_MODE ignored: invalid mode '{mode_name}' or no connection")
@@ -290,9 +388,12 @@ async def handle_set_mode(payload: dict):
     # 1. Get mode ID from mapping
     mapping = _mav.mode_mapping()
     if not mapping or mode_name not in mapping:
-        wslog("warn", f"SET_MODE: Unknown mode '{mode_name}'. Available: {list(mapping.keys()) if mapping else 'None'}")
+        wslog(
+            "warn",
+            f"SET_MODE: Unknown mode '{mode_name}'. Available: {list(mapping.keys()) if mapping else 'None'}",
+        )
         return
-    
+
     mode_id = mapping[mode_name]
 
     try:
@@ -304,11 +405,57 @@ async def handle_set_mode(payload: dict):
     except Exception as e:
         wslog("error", f"SET_MODE error: {e}")
 
+
+async def handle_get_list_path_logs(ws: WebSocket, payload: dict):
+    try:
+        log_files = await asyncio.to_thread(os.listdir, COORD_ECHO_LOG_FOLDER)
+    except FileNotFoundError:
+        log_files = []
+
+    response = {"type": "PATH_LOGS_LIST", "logs": log_files}
+    await ws.send_text(json.dumps(response))
+
+
+async def handle_get_path_log(ws: WebSocket, payload: dict):
+    log_file_name = payload.get("log", "")
+    if not log_file_name:
+        wslog("error", "log_file_name can't be empty")
+        return
+    path_log = []
+    try:
+        file_path = os.path.join(COORD_ECHO_LOG_FOLDER, log_file_name)
+        with open(file_path, "r") as log:
+            for line in log:
+                try:
+                    point = json.loads(line.strip())
+                    # Ensure keys exist before trying to read them
+                    if "lat" in point and "lon" in point and "depth_m" in point:
+                        # Cast to float to safely handle integers and validate numeric types
+                        path_log.append(
+                            {
+                                "lat": float(point["lat"]),
+                                "lon": float(point["lon"]),
+                                "depth_m": float(point["depth_m"]),
+                            }
+                        )
+                except (json.JSONDecodeError, ValueError, TypeError):
+                    # Skip corrupted lines silently rather than crashing the whole request
+                    continue
+    except FileNotFoundError:
+        wslog("error", f"log file '{log_file_name}' not found")
+    # Wrap response with a "type"
+    response = {"type": "PATH_LOG_DATA", "pathData": path_log}
+    await ws.send_text(json.dumps(response))
+
+
 HANDLERS = {
     "SET_HOME": handle_set_home,
     "MISSION_UPLOAD": handle_mission_upload,
     "SET_MODE": handle_set_mode,
+    "GET_LIST_PATH_LOGS": handle_get_list_path_logs,
+    "GET_PATH_LOG": handle_get_path_log,
 }
+
 
 def _sanitize_numbers(x):
     """Recursively replace NaN/Inf with None so JSON is always valid."""
@@ -320,22 +467,23 @@ def _sanitize_numbers(x):
         return [_sanitize_numbers(v) for v in x]
     return x
 
+
 def now_ts() -> str:
     return datetime.utcnow().isoformat() + "Z"
+
 
 def append_coord_echo_log(lat: float, lon: float, alt: float, depth_m: Optional[float]):
     # Append a JSON record to date-based file in path_logs folder
     if COORD_ECHO_LOG_FOLDER is None:
         return
     try:
-        import os
         # Create folder if it doesn't exist
         os.makedirs(COORD_ECHO_LOG_FOLDER, exist_ok=True)
-        
+
         # Get today's date and create filename
         date_str = datetime.utcnow().strftime("%Y-%m-%d")
         log_file = os.path.join(COORD_ECHO_LOG_FOLDER, f"{date_str}.txt")
-        
+
         record = {
             "ts": now_ts(),
             "lat": lat,
@@ -349,6 +497,7 @@ def append_coord_echo_log(lat: float, lon: float, alt: float, depth_m: Optional[
     except Exception as e:
         print("Coord/Rangefinder log write error:", e)
         wslog("error", f"Coord/Rangefinder log write error: {e}")
+
 
 def extract_depth_m(msg) -> Optional[float]:
     # Extract depth in meters from MAVLink DISTANCE_SENSOR message if available
@@ -395,7 +544,8 @@ def to_json_msg(msg) -> Dict[str, Any]:
         elif mtype == "DISTANCE_SENSOR":
             # DISTANCE_SENSOR is the modern message for rangefinders
             base["payload"] = {
-                "current_distance": getattr(msg, "current_distance", 0) / 100.0,  # cm to meters
+                "current_distance": getattr(msg, "current_distance", 0)
+                / 100.0,  # cm to meters
                 "min_distance": getattr(msg, "min_distance", 0) / 100.0,
                 "max_distance": getattr(msg, "max_distance", 0) / 100.0,
                 "type": getattr(msg, "type", 0),
@@ -417,6 +567,7 @@ def to_json_msg(msg) -> Dict[str, Any]:
     # <-- ensure no NaN/Inf ever leaves this function
     base["payload"] = _sanitize_numbers(base["payload"])
     return base
+
 
 async def broadcast(msg_json: str):
     to_remove = []
@@ -452,13 +603,14 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
         try:
             # Create a callable for our blocking function
             # We use 1.0 (float) for the timeout, which is good practice
-            blocking_recv = functools.partial(_mav.recv_match, blocking=True, timeout=1.0)
-            
+            blocking_recv = functools.partial(
+                _mav.recv_match, blocking=True, timeout=1.0
+            )
+
             # Run the blocking call in asyncio's default thread pool
             # The 'await' pauses THIS task, but NOT the main event loop
             msg = await loop.run_in_executor(
-                None,  # Use the default ThreadPoolExecutor
-                blocking_recv
+                None, blocking_recv  # Use the default ThreadPoolExecutor
             )
 
             if msg is None:
@@ -488,7 +640,7 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
                     # Optional: tell all connected web clients so you can show a toast in the UI
                     ack_msg = {
                         "type": "SET_HOME_ACK",
-                        "payload": {"result": result_names.get(res, res)}
+                        "payload": {"result": result_names.get(res, res)},
                     }
                     try:
                         await emit(ack_msg)
@@ -502,7 +654,10 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
 
             # Convert and store latest for snapshot & WS
             j = to_json_msg(msg)
-            latest_messages[j["type"]] = {"server_ts": j["server_ts"], "payload": j["payload"]}
+            latest_messages[j["type"]] = {
+                "server_ts": j["server_ts"],
+                "payload": j["payload"],
+            }
             text = json.dumps(j, default=str)
 
             if JSON_LOG_FILE:
@@ -518,7 +673,11 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
             # Update last_gps / last_att / last_rangefinder and print combined line
             if j["type"] == "GLOBAL_POSITION_INT":
                 p = j["payload"]
-                last_gps = {"lat": p.get("lat"), "lon": p.get("lon"), "alt": p.get("alt")}
+                last_gps = {
+                    "lat": p.get("lat"),
+                    "lon": p.get("lon"),
+                    "alt": p.get("alt"),
+                }
                 if last_gps.get("lat") is not None and last_gps.get("lon") is not None:
                     # Log GPS with current depth (from RANGEFINDER)
                     append_coord_echo_log(
@@ -529,10 +688,17 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
                     )
             elif j["type"] == "ATTITUDE":
                 p = j["payload"]
-                last_att = {"roll": p.get("roll"), "pitch": p.get("pitch"), "yaw": p.get("yaw")}
+                last_att = {
+                    "roll": p.get("roll"),
+                    "pitch": p.get("pitch"),
+                    "yaw": p.get("yaw"),
+                }
             elif j["type"] == "DISTANCE_SENSOR":
                 p = j["payload"]
-                last_rangefinder = {"distance": p.get("current_distance"), "type": p.get("type")}
+                last_rangefinder = {
+                    "distance": p.get("current_distance"),
+                    "type": p.get("type"),
+                }
                 last_depth_m = p.get("current_distance")
             elif j["type"] == "RANGEFINDER":
                 p = j["payload"]
@@ -582,13 +748,16 @@ async def websocket_endpoint(ws: WebSocket):
                 payload = data.get("payload") or {}
                 handler = HANDLERS.get(msg_type)
                 if handler:
-                    await handler(payload)  # can be async; for long tasks, the handler itself schedules
+                    await handler(
+                        ws, payload
+                    )  # can be async; for long tasks, the handler itself schedules
             except Exception as e:
                 wslog("warn", f"WS inbound parse/dispatch error: {e}")
                 # ignore bad frames, keep loop alive
     except WebSocketDisconnect:
         clients.discard(ws)
         wslog("info", f"WebSocket client disconnected: {ws.client}")
+
 
 @app.get("/snapshot")
 async def snapshot():

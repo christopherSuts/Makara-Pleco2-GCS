@@ -10,6 +10,8 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@turf/turf": "^7.3.4",
+    "geodesy": "^2.4.0",
     "leaflet": "^1.9.4",
     "next": "^15.5.4",
     "node-mavlink": "^2.3.0",
@@ -18,6 +20,7 @@
     "react-leaflet": "^5.0.0",
     "react-split": "^2.0.14",
     "react-toastify": "^11.0.5",
+    "three": "^0.183.0",
     "ws": "^8.18.3"
   },
   "devDependencies": {
