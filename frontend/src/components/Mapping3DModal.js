@@ -54,36 +54,61 @@ export default function BathymetryModal({ open, onClose, handleGetPathLogList, h
         }
     };
 
+    // --- COLOR MAPPING UTILITY ---
+    // Classic Heatmap/Bathymetry Scale: Red (Shallow) -> Yellow -> Cyan -> Deep Blue
+    const bathymetryPalette = [
+        new THREE.Color(0xd73027), // Shallowest: Red
+        new THREE.Color(0xfdae61), // Orange
+        //new THREE.Color(0xfee090), // Yellow
+        //new THREE.Color(0xe0f3f8), // Light Cyan
+        //new THREE.Color(0xabd9e9), // Light Blue
+        //new THREE.Color(0x74add1), // Medium Blue
+        new THREE.Color(0x4575b4), // Deep Blue
+        new THREE.Color(0x313695)  // Deepest: Dark Blue
+    ];
+
+    const getDepthColor = (normDepth) => {
+        const t = Math.max(0, Math.min(1, normDepth));
+        const segments = bathymetryPalette.length - 1;
+        const scaled = t * segments;
+        const index = Math.floor(scaled);
+        const fraction = scaled - index;
+
+        // If exactly at max depth, return the last color
+        if (index >= segments) return bathymetryPalette[segments].clone();
+
+        // Smoothly blend between the two nearest colors
+        const color = bathymetryPalette[index].clone();
+        color.lerp(bathymetryPalette[index + 1], fraction);
+        return color;
+    };
+
+
     // 3. Initialize Three.js with Turf IDW & Geodesy Projection
     const initThreeJS = (points) => {
         if (!canvasContainerRef.current) return;
 
         // --- DATA PROCESSING (Turf) ---
-        // Format raw data into Turf points
         const features = points.map(p => turf.point([p.lon, p.lat], { depth: p.depth_m }));
         const pointsFC = turf.featureCollection(features);
 
-        // Dynamically calculate an optimal cell size based on the bounding box (target ~50x50 grid)
         const bbox = turf.bbox(pointsFC);
         const diagDist = turf.distance(turf.point([bbox[0], bbox[1]]), turf.point([bbox[2], bbox[3]]), { units: 'kilometers' });
-        const cellSize = Math.max(diagDist / 50, 0.0005); // min 0.5 meters resolution
+        const cellSize = Math.max(diagDist / 50, 0.0005);
 
-        // Run Inverse Distance Weighting interpolation
         const grid = turf.interpolate(pointsFC, cellSize, {
             gridType: 'point',
             property: 'depth',
             units: 'kilometers',
-            weight: 2 // standard IDW exponent
+            weight: 2
         });
 
-        // Turf outputs a flat array. To build a 3D surface mesh, we must sort it into perfect rows and columns.
         const sortedGrid = grid.features.sort((a, b) => {
-            const latDiff = b.geometry.coordinates[1] - a.geometry.coordinates[1]; // Descending Lat (Top to Bottom)
+            const latDiff = b.geometry.coordinates[1] - a.geometry.coordinates[1];
             if (Math.abs(latDiff) > 1e-8) return latDiff;
-            return a.geometry.coordinates[0] - b.geometry.coordinates[0]; // Ascending Lon (Left to Right)
+            return a.geometry.coordinates[0] - b.geometry.coordinates[0];
         });
 
-        // Determine grid dimensions
         const topLat = sortedGrid[0].geometry.coordinates[1];
         let cols = 0;
         for (let i = 0; i < sortedGrid.length; i++) {
@@ -92,13 +117,11 @@ export default function BathymetryModal({ open, onClose, handleGetPathLogList, h
         }
         const rows = Math.floor(sortedGrid.length / cols);
 
-
         // --- SCENE SETUP (ThreeJS) ---
         const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x222222);
+        scene.background = new THREE.Color(0x1a1a1a); // Slightly darker background to make colors pop
 
-        // Add lights so the 3D surface topography creates shadows/highlights
-        scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
         const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
         dirLight.position.set(100, 200, 50);
         scene.add(dirLight);
@@ -116,7 +139,6 @@ export default function BathymetryModal({ open, onClose, handleGetPathLogList, h
         const controls = new OrbitControls(camera, renderer.domElement);
 
         // --- GEOMETRY GENERATION (Geodesy) ---
-        // Set an origin point to calculate local X,Y,Z offsets in meters
         const centerLon = (bbox[0] + bbox[2]) / 2;
         const centerLat = (bbox[1] + bbox[3]) / 2;
         const origin = new LatLon(centerLat, centerLon);
@@ -124,39 +146,37 @@ export default function BathymetryModal({ open, onClose, handleGetPathLogList, h
         const surfaceGeo = new THREE.BufferGeometry();
         const vertices = new Float32Array(rows * cols * 3);
         const colors = new Float32Array(rows * cols * 3);
-        const colorObj = new THREE.Color();
-        const maxDepth = Math.max(...sortedGrid.map(f => f.properties.depth));
-        const minDepth = Math.min(...sortedGrid.map(f => f.properties.depth));
 
-        // Map every grid point to local Cartesian coordinates
+        // Use max value, fallback to 0.001 to prevent division by zero errors
+        const maxDepth = Math.max(...sortedGrid.map(f => f.properties.depth), 0.001);
+        const minDepth = Math.max(...sortedGrid.map(f => f.properties.depth), 0.001);
+
         for (let i = 0; i < rows * cols; i++) {
             const feat = sortedGrid[i];
             const pt = new LatLon(feat.geometry.coordinates[1], feat.geometry.coordinates[0]);
 
-            const dist = origin.distanceTo(pt); // meters
-            const brng = origin.initialBearingTo(pt); // degrees
+            const dist = origin.distanceTo(pt);
+            const brng = origin.initialBearingTo(pt);
 
-            // Convert to Cartesian (East = X, North = -Z in Three.js)
             const x = dist * Math.sin(brng * Math.PI / 180);
             const z = -dist * Math.cos(brng * Math.PI / 180);
-            const y = -feat.properties.depth; // Depth goes down
+            const y = -feat.properties.depth;
 
             vertices[i * 3] = x;
             vertices[i * 3 + 1] = y;
             vertices[i * 3 + 2] = z;
 
-            // Gradient coloring based on depth
+            // Apply new bathymetry color logic
             const normDepth = Math.min(Math.max(feat.properties.depth / maxDepth, 0), 1);
-            colorObj.setHSL(0.6, 1.0, 0.5 - (normDepth * 0.4));
-            colors[i * 3] = colorObj.r;
-            colors[i * 3 + 1] = colorObj.g;
-            colors[i * 3 + 2] = colorObj.b;
+            const pointColor = getDepthColor(normDepth);
+            colors[i * 3] = pointColor.r;
+            colors[i * 3 + 1] = pointColor.g;
+            colors[i * 3 + 2] = pointColor.b;
         }
 
         surfaceGeo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
         surfaceGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
-        // Stitch the grid points together into solid triangles
         const indices = [];
         for (let r = 0; r < rows - 1; r++) {
             for (let c = 0; c < cols - 1; c++) {
@@ -169,18 +189,17 @@ export default function BathymetryModal({ open, onClose, handleGetPathLogList, h
             }
         }
         surfaceGeo.setIndex(indices);
-        surfaceGeo.computeVertexNormals(); // Crucial for lighting to interact with the surface
+        surfaceGeo.computeVertexNormals();
 
-        // Render the interpolated surface
         const surfaceMat = new THREE.MeshStandardMaterial({
             vertexColors: true,
             side: THREE.DoubleSide,
-            flatShading: true // Set to false for a smooth look, true for a faceted geometric look
+            flatShading: true // Gives that cool low-poly topographic look
         });
         const surfaceMesh = new THREE.Mesh(surfaceGeo, surfaceMat);
         scene.add(surfaceMesh);
 
-        // Optional: Render the raw ASV track data on top as white dots to verify interpolation
+        // Render raw ASV track data
         const rawGeo = new THREE.BufferGeometry();
         const rawVerts = [];
         points.forEach(p => {
@@ -190,17 +209,15 @@ export default function BathymetryModal({ open, onClose, handleGetPathLogList, h
             const x = dist * Math.sin(brng * Math.PI / 180);
             const z = -dist * Math.cos(brng * Math.PI / 180);
             const y = -p.depth_m;
-            rawVerts.push(x, y + 0.05, z); // slight offset up to avoid Z-fighting with the surface
+            rawVerts.push(x, y + 0.05, z);
         });
         rawGeo.setAttribute('position', new THREE.Float32BufferAttribute(rawVerts, 3));
         const rawMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.5 });
         scene.add(new THREE.Points(rawGeo, rawMat));
 
-        // Setup environment guides
         scene.add(new THREE.GridHelper(100, 10));
         scene.add(new THREE.AxesHelper(5));
 
-        // Auto-position the camera diagonally above the surface
         camera.position.set(50, Math.max(maxDepth + 20, 40), 50);
         controls.target.set(0, -(maxDepth + minDepth) / 2, 0);
         controls.update();
