@@ -24,10 +24,10 @@ IS_REMOTE_LOGGER = True # Set true for arch 1, false for arch 2
 # Ensure SSH keys are set up so no password is required.
 REMOTE_SSH_CMD = ["ssh", "amv-onboard@10.10.10.3"] 
 # Full path to jetson_logger.py on the remote machine
-REMOTE_SCRIPT_PATH = "/home/amv-onboard/Makara-Pleco2-GCS-Arch1/backend/jetson_logger.py"
+REMOTE_SCRIPT_PATH = "/home/amv-onboard/PPI/Makara-Pleco2-GCS-Arch1/backend/jetson_logger.py"
 
 # Experiment Config
-EXPERIMENT_DURATION = 60  # Default 600s
+EXPERIMENT_DURATION = 600  # Default 600s
 
 app = FastAPI()
 clients: Set[WebSocket] = set()
