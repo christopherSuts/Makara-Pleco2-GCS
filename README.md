@@ -11,6 +11,13 @@ The project is divided into two main components:
     - `middleware-Arch2.py`: Middleware for Architecture 2 (Edge-Based / Onboard).
 - **`frontend/`**: A Next.js web application that serves as the operator interface.
 
+## Documentation Links
+
+- [mavlink-router setup](https://www.notion.so/mavlink-router-setup-297ddc6f676480bc8777d95b6e52fe32?source=copy_link)
+- [ubiquiti setup](https://www.notion.so/Ubiquiti-Setup-2ecddc6f6764801aa764d75a4031c820?source=copy_link)
+- [testing procedure](https://www.notion.so/Testing-Procedure-2ecddc6f6764803286f3cb9179c09181?source=copy_link)
+- [Unlocking ssh no password](https://www.notion.so/jetson-ssh-noPass-unlock-2daddc6f67648036a077cb5822c4077f?source=copy_link)
+
 ## System Architecture
 
 The following diagram illustrates the two supported network architectures for the Makara-Pleco2 system:
@@ -29,6 +36,9 @@ In this configuration, the middleware runs directly on the vehicle's onboard com
 - **Network Configuration**:
     - **GCS IP**: `10.10.10.2/24` (Static)
     - **Jetson (Vehicle) IP**: `10.10.10.3/24` (Static)
+    - **onboard Rocket-5AC username & pass**: `amv-onboard` (`10.10.10.55`), `AMVUIjuara1!`
+    - **basestation Rocket-5AC username & pass**: `amv-basestation` (`10.10.10.56`), `AMVUIjuara1!`
+    - **ssh command to onboard jetson**: `ssh amv-onboard@10.10.10.3`
 - **Software**:
     - **Python 3.8+** (for backend)
     - **Node.js 18+ & npm** (for frontend)
