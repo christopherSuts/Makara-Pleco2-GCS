@@ -12,6 +12,7 @@ export default function BathymetryModal({ open, onClose, handleGetPathLogList, h
 
     const [dataLoaded, setDataLoaded] = useState(false);
     const [selectedLog, setSelectedLog] = useState("");
+    const [mockPoints, setMockPoints] = useState(null);
 
     // 1. Fetch the list of logs when the modal opens
     useEffect(() => {
@@ -25,7 +26,8 @@ export default function BathymetryModal({ open, onClose, handleGetPathLogList, h
 
     // 2. Watch for incoming path log data to render
     useEffect(() => {
-        const pointArray = telemetry["PATH_LOG_DATA"]?.pathData;
+        const pointArray = mockPoints || telemetry["PATH_LOG_DATA"]?.pathData;
+        // const pointArray = telemetry["PATH_LOG_DATA"]?.pathData;
 
         if (open && pointArray && pointArray.length > 0) {
             initThreeJS(pointArray);
@@ -42,7 +44,7 @@ export default function BathymetryModal({ open, onClose, handleGetPathLogList, h
             }
             if (canvasContainerRef.current) canvasContainerRef.current.innerHTML = "";
         };
-    }, [telemetry["PATH_LOG_DATA"]?.pathData, open]);
+    }, [mockPoints, telemetry["PATH_LOG_DATA"]?.pathData, open]);
 
     const handleLogSelect = (e) => {
         const fileName = e.target.value;
@@ -83,7 +85,57 @@ export default function BathymetryModal({ open, onClose, handleGetPathLogList, h
         return color;
     };
 
+    function generateMockBathymetry() {
+        const points = [];
 
+        const baseLat = 37.7749;
+        const baseLon = -122.4194;
+
+        const rows = 60;
+        const cols = 60;
+
+        // location of deep pit (center of grid)
+        const pitRow = rows * 0.55;
+        const pitCol = cols * 0.45;
+
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+
+                const lat = baseLat + r * 0.00002;
+                const lon = baseLon + c * 0.00002;
+
+                // --- Base slope (gradually deeper downward)
+                const slope = r * 0.06;
+
+                // --- Terrain waves (simulate seabed ridges)
+                const waves =
+                    Math.sin(r * 0.25) * 1.2 +
+                    Math.cos(c * 0.18) * 1.0;
+
+                // --- Deep pit (Gaussian depression)
+                const distSq =
+                    Math.pow(r - pitRow, 2) +
+                    Math.pow(c - pitCol, 2);
+
+                const pitDepth =
+                    Math.exp(-distSq / 180) * 8; // pit intensity
+
+                // --- Random sonar noise
+                const noise = (Math.random() - 0.5) * 0.3;
+
+                const depth =
+                    4 + slope + waves + pitDepth + noise;
+
+                points.push({
+                    lat,
+                    lon,
+                    depth_m: depth
+                });
+            }
+        }
+
+        return points;
+    }
     // 3. Initialize Three.js with Turf IDW & Geodesy Projection
     const initThreeJS = (points) => {
         if (!canvasContainerRef.current) return;
@@ -245,6 +297,15 @@ export default function BathymetryModal({ open, onClose, handleGetPathLogList, h
                 <div className="p-4 border-b border-white/10 flex justify-between items-center bg-black/20 z-10">
                     <h2 className="text-white font-bold text-lg">3D Bathymetry Viz</h2>
                     <div className="flex gap-4 items-center">
+                        <button
+                            onClick={() => {
+                                setMockPoints(generateMockBathymetry());
+                                setDataLoaded(false);
+                            }}
+                            className="bg-[#6B0F2B] hover:bg-[#8c1438] text-white text-xs px-3 py-1 rounded"
+                        >
+                            Mock Data
+                        </button>
                         <select
                             value={selectedLog}
                             onChange={handleLogSelect}

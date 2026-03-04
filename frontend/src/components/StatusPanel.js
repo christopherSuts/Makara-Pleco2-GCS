@@ -8,7 +8,7 @@ const pwmToPct = (pwm) =>
   Math.max(-100, Math.min(100, ((Number(pwm) - 1500) / 400) * 100));
 
 // Calculate battery time estimation (HH:MM:SS)
-const calculateBatteryTime = (maxBatteryAh, servo1_raw, servo3_raw) => {
+const calculateBatteryTime = (currentBattery) => {
   // Find current for servo1_raw and servo3_raw from pwmMap datasheet
   const getPwmCurrent = (pwm) => {
     if (pwm == null) return null;
@@ -29,16 +29,17 @@ const calculateBatteryTime = (maxBatteryAh, servo1_raw, servo3_raw) => {
     return maxCurrent || 0;
   };
 
-  const current1 = getPwmCurrent(servo1_raw) || 0;
-  const current3 = getPwmCurrent(servo3_raw) || 0;
+  const servo_avg = "1200";
+  const current1 = getPwmCurrent(servo_avg) || 0;
+  const current3 = getPwmCurrent(servo_avg) || 0;
   const totalCurrent = current1 + current3; // Amps
 
-  if (totalCurrent <= 0 || !maxBatteryAh) {
-    return "∞";
+  if (totalCurrent <= 0 || !currentBattery) {
+    return "N/A";
   }
 
   // Calculate hours remaining
-  const hoursRemaining = maxBatteryAh / totalCurrent;
+  const hoursRemaining = currentBattery / totalCurrent;
 
   // Convert to HH:MM:SS
   const totalSeconds = hoursRemaining * 3600;
@@ -54,6 +55,8 @@ export default function StatusPanel({ telemetry, isBackendConnected }) {
   const hb = telemetry?.HEARTBEAT;
   const lastHeartbeat = hb?.server_ts ? new Date(hb.server_ts).getTime() : 0;
   const now = new Date().getTime();
+  const path_length = 2000;
+  const avg_speed = 20;
 
   // Logical connection: Backend WS is connected AND Heartbeat is fresh (<3s)
   const isHeartbeatFresh = lastHeartbeat > 0 && (now - lastHeartbeat) < 3000;
@@ -77,9 +80,8 @@ export default function StatusPanel({ telemetry, isBackendConnected }) {
   const motorBattery = motorBatteryParser(telemetry?.SERIAL_DATA?.payload.raw).status || "0";
 
   // Calculate battery time estimation based on servo PWM
-  const servo1_raw = telemetry?.SERVO_OUTPUT_RAW?.payload?.servo1_raw;
-  const servo3_raw = telemetry?.SERVO_OUTPUT_RAW?.payload?.servo3_raw;
-  const batteryTimeEst = calculateBatteryTime(maxBattery, servo1_raw, servo3_raw);
+  const batteryTimeEst = calculateBatteryTime(maxBattery);
+  const timeEstimation = path_length / avg_speed; // in hours
   // --- IGNORE ---
   const speedOverground = telemetry?.VFR_HUD?.payload?.groundspeed ?? 0;
 
@@ -149,7 +151,7 @@ export default function StatusPanel({ telemetry, isBackendConnected }) {
         </div>
 
         <div className="bg-amv-black/30 border border-white/5 p-1.5 rounded-xl flex justify-between">
-          <span>Batt Time:</span>
+          <span>Batt Estimate:</span>
           <span className="font-mono font-bold text-amv-white">{batteryTimeEst}</span>
         </div>
 
@@ -163,7 +165,10 @@ export default function StatusPanel({ telemetry, isBackendConnected }) {
           <span className="font-mono font-bold text-amv-white">{speedOverground.toFixed(2)}</span>
         </div>
 
-
+        <div className="bg-amv-black/30 border border-white/5 p-1.5 rounded-xl flex justify-between">
+          <span>Time Estimation:</span>
+          <span className="font-mono font-bold text-amv-white">{timeEstimation.toFixed(2)} s</span>
+        </div>
 
         <div className="bg-amv-black/30 border border-white/5 p-1.5 rounded-xl flex justify-between">
           <span>Killswitch:</span>

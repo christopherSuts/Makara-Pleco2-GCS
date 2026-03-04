@@ -1,3 +1,5 @@
 # .env
 frontend/logs/
+frontend/node_modules/
+frontend/.next/
 old_backend/
