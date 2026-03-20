@@ -103,35 +103,38 @@ export default function EchosounderPanel({ telemetry }) {
                 </div>
 
                 {/* Main Depth Bar with Gradient Background */}
-                <div className="relative flex-1 h-full max-w-[80px] bg-gradient-to-b from-green-500 via-yellow-500 to-red-500 rounded-lg border-2 border-white/30 overflow-hidden">
+                <div className={`${depthPosition > 0 ? "bg-gradient-to-b from-green-500 via-yellow-500 to-red-500" : "bg-gray-500 disabled"} relative flex-1 h-full max-w-[80px] rounded-lg border-2 border-white/30 overflow-hidden`}>
 
                     {/* Current Depth Indicator */}
-                    <div
-                        className="absolute left-0 right-0 transition-all duration-300 ease-out"
-                        style={{
-                            bottom: `${depthPosition}%`,
-                            height: '4px',
-                            backgroundColor: 'white',
-                            boxShadow: `0 0 10px ${depthColor}, 0 0 20px ${depthColor}`,
-                        }}
-                    />
-
-                    {/* Depth Value Floating Label */}
-                    <div
-                        className="absolute left-0 right-0 transition-all duration-300 ease-out flex justify-center"
-                        style={{
-                            bottom: `calc(${depthPosition}% + 6px)`,
-                        }}
-                    >
-                        <div
-                            className="px-2 py-0.5 rounded text-[11px] font-bold text-white shadow-lg"
+                    {depthPosition > 0 &&
+                        < div
+                            className="absolute left-0 right-0 transition-all duration-300 ease-out"
                             style={{
-                                backgroundColor: depthColor,
+                                bottom: `${depthPosition}%`,
+                                height: '4px',
+                                backgroundColor: 'white',
+                                boxShadow: `0 0 10px ${depthColor}, 0 0 20px ${depthColor}`,
+                            }}
+                        />
+                    }
+
+                    {depthPosition > 0 &&
+                        <div
+                            className="absolute left-0 right-0 transition-all duration-300 ease-out flex justify-center"
+                            style={{
+                                bottom: `calc(${depthPosition}% + 6px)`,
                             }}
                         >
-                            {currentDepth.toFixed(1)}m
+                            <div
+                                className="px-2 py-0.5 rounded text-[11px] font-bold text-white shadow-lg"
+                                style={{
+                                    backgroundColor: depthColor,
+                                }}
+                            >
+                                {currentDepth.toFixed(1)}m
+                            </div>
                         </div>
-                    </div>
+                    }
 
                     {/* History Trail (optional - untuk efek echogram scrolling) */}
                     {depthHistory.slice(-20).map((depth, idx) => {
