@@ -5,7 +5,9 @@ import { useState, useEffect, useRef } from "react";
 import { toast } from "react-toastify";
 
 // Your WebSocket server URL
-const WS_URL = "ws://localhost:9000/ws";
+const WS_PRIMARY = "wss://10.10.10.3:9000/ws";
+const WS_FALLBACK = "wss://100.117.19.50:9000/ws"; 
+const WS_URL = WS_PRIMARY;
 const RECONNECT_DELAY = 3000; // 3 seconds
 
 export function useTelemetry() {
@@ -49,9 +51,12 @@ export function useTelemetry() {
       };
       ws.onclose = () => {
         setIsConnected(false);
+        // If primary failed, try fallback; if fallback failed, retry primary
+        const nextUrl = (url === WS_PRIMARY) ? WS_FALLBACK : WS_PRIMARY;
         clearTimeout(reconnectTimer.current);
-        reconnectTimer.current = setTimeout(connect, 3000);
+        reconnectTimer.current = setTimeout(() => connect(nextUrl), RECONNECT_DELAY);
       };
+
       ws.onerror = (err) => console.error("WS error", err);
     };
 
