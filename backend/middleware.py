@@ -464,8 +464,8 @@ async def _serve():
         app,
         host=WS_HOST,
         port=WS_PORT,
-        ssl_keyfile="/home/amv-onboard/pleco-certs/middleware-key.pem",
-        ssl_certfile="/home/amv-onboard/pleco-certs/middleware-cert.pem",
+        ssl_keyfile="/home/amv-onboard/pleco-certs/amv-onboard.tailc2fe55.ts.net.key",
+        ssl_certfile="/home/amv-onboard/pleco-certs/amv-onboard.tailc2fe55.ts.net.crt",
         log_level="info",
     )
     server = uvicorn.Server(config)
