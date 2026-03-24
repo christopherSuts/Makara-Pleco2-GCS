@@ -94,7 +94,7 @@ python3 middleware-Arch1.py
 **Terminal 2 (GCS - Frontend):**
 ```bash
 cd frontend
-npm run dev:pymavlink
+npm run dev
 ```
 
 **Terminal 3 (SSH to Jetson - MAVLink Router):**
@@ -114,7 +114,7 @@ In this setup, the middleware runs directly on the Jetson (Edge), and the fronte
 **Terminal 1 (GCS - Frontend):**
 ```bash
 cd frontend
-npm run dev:pymavlink
+npm run dev
 ```
 
 **Terminal 2 (SSH to Jetson - Middleware):**
