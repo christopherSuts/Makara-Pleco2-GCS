@@ -18,11 +18,13 @@ import { useState } from "react";
 import MapWrapper from "../components/MapWrapper";
 import CenterModeToggle from "@/components/CenterModeToggle";
 import { useTelemetry } from "@/components/features/useTelemetry";
+import { useBathymetry } from "@/components/features/useBathymetry";
 import { pathToMissionItems } from "@/lib/missionWP";
 import { toast } from "react-toastify";
 
 export default function HomePage() {
   const { telemetry, isConnected, send } = useTelemetry();
+  const bathymetry = useBathymetry(telemetry);
   const asvPosition = telemetry.GLOBAL_POSITION_INT;
   const perimeter = usePerimeter(asvPosition);
   const boundaries = useBoundaries();
@@ -80,6 +82,9 @@ export default function HomePage() {
       send({ type: "SET_MODE", payload: { mode: "MANUAL" } });
   };
   const handleAuto = () => { 
+      if (!bathymetry.hasStarted) {
+        toast.warn("Warning: Bathymetry logging not started before AUTO mode!");
+      }
       console.log("Setting Mode: AUTO"); 
       send({ type: "SET_MODE", payload: { mode: "AUTO" } });
   };
@@ -306,7 +311,13 @@ export default function HomePage() {
            </div>
            
            <div className="col-start-3 row-start-1 min-w-0 shadow-lg pointer-events-auto">
-               <EchosounderPanel telemetry={telemetry} />
+               <EchosounderPanel
+                telemetry={telemetry}
+                isRecording={bathymetry.isRecording}
+                onStart={bathymetry.startRecording}
+                onStop={bathymetry.stopRecording}
+                onDownload={bathymetry.downloadCSV}
+              />
            </div>
 
            {/* Bottom Row */}
