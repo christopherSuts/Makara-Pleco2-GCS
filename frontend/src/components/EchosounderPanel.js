@@ -1,7 +1,7 @@
 "use client";
 
-export default function EchosounderPanel({ telemetry, isRecording, onStart, onStop, onDownload }) {
-  const depth = "0.0";
+export default function EchosounderPanel({ telemetry, isRecording, onStart, onStop, onDownload, depthOverride }) {
+  const depth = depthOverride !== undefined ? depthOverride.toFixed(1) : "0.0";
 
   const pos = telemetry?.GLOBAL_POSITION_INT?.payload;
   const lat = pos?.lat ? (pos.lat / 1e7).toFixed(6) : "–";

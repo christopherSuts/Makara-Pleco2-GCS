@@ -2,15 +2,15 @@
 
 import { useState, useCallback, useRef, useEffect } from "react";
 
-export function useBathymetry(telemetry) {
+export function useBathymetry(telemetry, depthOverride) {
   const [isRecording, setIsRecording] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [bathymetryData, setBathymetryData] = useState([]);
   const intervalRef = useRef(null);
 
-  const pos = telemetry?.GLOBAL_POSITION_INT?.payload;
-  const lat = pos?.lat;
-  const lon = pos?.lon;
+  
+  // const lat = pos?.lat;
+  // const lon = pos?.lon;
 
   const startRecording = useCallback(() => {
     setIsRecording(true);
@@ -27,11 +27,11 @@ export function useBathymetry(telemetry) {
   }, []);
 
   useEffect(() => {
-    if (isRecording && lat != null && lon != null) {
+    if (isRecording) {
       intervalRef.current = setInterval(() => {
         const posData = telemetry?.GLOBAL_POSITION_INT?.payload;
         if (posData) {
-          const depth = 0.0;
+          const depth = depthOverride !== undefined ? depthOverride : 0.0;
           setBathymetryData((prev) => [
             ...prev,
             {
@@ -56,7 +56,7 @@ export function useBathymetry(telemetry) {
         intervalRef.current = null;
       }
     };
-  }, [isRecording, telemetry, lat, lon]);
+  }, [isRecording, telemetry, depthOverride]);
 
   const downloadCSV = useCallback(() => {
     if (bathymetryData.length === 0) return;

@@ -17,14 +17,17 @@ import { usePath } from "@/components/features/usePath";
 import { useState } from "react";
 import MapWrapper from "../components/MapWrapper";
 import CenterModeToggle from "@/components/CenterModeToggle";
+import { useSimulation } from "@/components/features/useSimulation";
 import { useTelemetry } from "@/components/features/useTelemetry";
 import { useBathymetry } from "@/components/features/useBathymetry";
 import { pathToMissionItems } from "@/lib/missionWP";
 import { toast } from "react-toastify";
 
 export default function HomePage() {
-  const { telemetry, isConnected, send } = useTelemetry();
-  const bathymetry = useBathymetry(telemetry);
+  const simulation = useSimulation(false);
+  const { telemetry: realTelemetry, isConnected, send } = useTelemetry();
+  const telemetry = simulation.isSimulating ? simulation.simulatedTelemetry : realTelemetry;
+  const bathymetry = useBathymetry(telemetry, simulation.isSimulating ? simulation.depthValue : undefined);
   const asvPosition = telemetry.GLOBAL_POSITION_INT;
   const perimeter = usePerimeter(asvPosition);
   const boundaries = useBoundaries();
@@ -317,6 +320,7 @@ export default function HomePage() {
                 onStart={bathymetry.startRecording}
                 onStop={bathymetry.stopRecording}
                 onDownload={bathymetry.downloadCSV}
+                depthOverride={simulation.isSimulating ? simulation.depthValue : undefined}
               />
            </div>
 
@@ -337,6 +341,9 @@ export default function HomePage() {
                 onConnect={handleConnect}
                 onCloud={handleCloud}
                 onSendWP={sendMissionOverWS}
+                onSimulate={ () => simulation.isSimulating ? simulation.stopSimulation() : simulation.startSimulation() }
+                isSimulating={simulation.isSimulating}
+                telemetry={telemetry}
                 hasPath={path.hasPath}
                />
            </div>
