@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect } from "react";
 
-export default function EchosounderPanel({ telemetry }) {
+export default function EchosounderPanel({ telemetry, isRecording, onStart, onStop, onDownload }) {
     // State untuk menyimpan history depth untuk efek scrolling
     const [depthHistory, setDepthHistory] = useState([]);
     const MAX_HISTORY = 50; // Jumlah data points untuk ditampilkan
@@ -88,7 +88,15 @@ export default function EchosounderPanel({ telemetry }) {
 
     return (
         <div className="bg-amv-grey/90 border border-white/10 rounded-2xl p-3 shadow-xl h-full flex flex-col items-center relative backdrop-blur-md">
-            <h3 className="text-sm font-bold text-center text-amv-white mb-2 w-full shrink-0 uppercase tracking-wider">Echogram</h3>
+            <h3 className="text-sm font-bold text-center text-amv-white mb-2 w-full shrink-0 uppercase tracking-wider flex items-center justify-center gap-2">
+                Echogram
+                {isRecording && (
+                    <span className="flex items-center gap-1 text-xs text-red-400 animate-pulse">
+                        <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+                        REC
+                    </span>
+                )}
+            </h3>
 
             {/* Visual Bar Container */}
             <div className="flex-1 w-full flex items-center justify-center gap-3 min-h-0 overflow-hidden px-2">
@@ -192,6 +200,32 @@ export default function EchosounderPanel({ telemetry }) {
                     <span className="opacity-60">Lon:</span>
                     <span className="font-mono text-[10px]">{lon}</span>
                 </div>
+            </div>
+
+            <div className="w-full mt-2 flex gap-2 shrink-0">
+                {!isRecording ? (
+                    <button
+                        onClick={onStart}
+                        className="flex-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/50 rounded-lg px-3 py-1.5 text-xs font-bold transition uppercase tracking-wide"
+                    >
+                        START
+                    </button>
+                ) : (
+                    <>
+                        <button
+                            onClick={onStop}
+                            className="flex-1 bg-red-500/20 hover:bg-red-500/30 text-red-400 border border-red-500/50 rounded-lg px-3 py-1.5 text-xs font-bold transition uppercase tracking-wide"
+                        >
+                            STOP
+                        </button>
+                        <button
+                            onClick={onDownload}
+                            className="flex-1 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 border border-blue-500/50 rounded-lg px-3 py-1.5 text-xs font-bold transition uppercase tracking-wide"
+                        >
+                            CSV
+                        </button>
+                    </>
+                )}
             </div>
         </div>
     );
