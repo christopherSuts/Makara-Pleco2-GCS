@@ -57,6 +57,126 @@ def wslog(level: str, msg: str):
             "payload": {"ts": _now(), "level": str(level), "msg": str(msg)}}
     emit_nowait(data)
 
+async def simulation_mode(stop_event: asyncio.Event):
+    """
+    Simulation mode: generates dummy MAVLink messages when no hardware is connected.
+    Broadcasts simulated GPS, ATTITUDE, HEARTBEAT, SYS_STATUS, and RANGEFINDER data.
+    """
+    import random
+    import math
+    
+    print("Starting simulation mode...")
+    wslog("info", "Running in simulation mode (no MAVLink hardware)")
+    
+    base_lat = 52.5200  # Berlin as default
+    base_lon = 13.4050
+    base_alt = 10.0
+    base_heading = 0.0
+    
+    while not stop_event.is_set():
+        try:
+            timestamp = _now()
+            
+            # Simulate HEARTBEAT
+            heartbeat_msg = {
+                "type": "HEARTBEAT",
+                "server_ts": timestamp,
+                "payload": {
+                    "base_mode": 0,
+                    "system_status": 4,  # MC_ARMED
+                }
+            }
+            await emit(heartbeat_msg)
+            latest_messages["HEARTBEAT"] = {"server_ts": timestamp, "payload": heartbeat_msg["payload"]}
+            
+            # Simulate GLOBAL_POSITION_INT with slight movement
+            base_lat += random.uniform(-0.00001, 0.00001)
+            base_lon += random.uniform(-0.00001, 0.00001)
+            base_heading = (base_heading + random.uniform(-2, 2)) % 360
+            base_alt += random.uniform(-0.1, 0.1)
+            base_alt = max(5.0, min(50.0, base_alt))  # Keep between 5-50m
+            
+            pos_msg = {
+                "type": "GLOBAL_POSITION_INT",
+                "server_ts": timestamp,
+                "payload": {
+                    "lat": int(base_lat * 1e7),
+                    "lon": int(base_lon * 1e7),
+                    "alt": int(base_alt * 1000),
+                }
+            }
+            await emit(pos_msg)
+            latest_messages["GLOBAL_POSITION_INT"] = {"server_ts": timestamp, "payload": pos_msg["payload"]}
+            
+            # Simulate ATTITUDE
+            roll = random.uniform(-5, 5)
+            pitch = random.uniform(-3, 3)
+            yaw = base_heading
+            
+            att_msg = {
+                "type": "ATTITUDE",
+                "server_ts": timestamp,
+                "payload": {
+                    "roll": math.radians(roll),
+                    "pitch": math.radians(pitch),
+                    "yaw": math.radians(yaw),
+                }
+            }
+            await emit(att_msg)
+            latest_messages["ATTITUDE"] = {"server_ts": timestamp, "payload": att_msg["payload"]}
+            
+            # Simulate RANGEFINDER (echosounder) - depth between 0.5 and 15 meters
+            # Simulates the 25-degree cone scanning downward
+            depth = random.uniform(0.5, 15.0)
+            voltage = random.uniform(2.5, 5.0)
+            
+            range_msg = {
+                "type": "RANGEFINDER",
+                "server_ts": timestamp,
+                "payload": {
+                    "distance": depth,
+                    "voltage": voltage,
+                }
+            }
+            await emit(range_msg)
+            latest_messages["RANGEFINDER"] = {"server_ts": timestamp, "payload": range_msg["payload"]}
+            
+            # Simulate DISTANCE_SENSOR with confidence
+            dist_sensor_msg = {
+                "type": "DISTANCE_SENSOR",
+                "server_ts": timestamp,
+                "payload": {
+                    "distance": depth,
+                    "confidence": random.uniform(70, 99),
+                    "sensor_type": 0,  # ULTRASOUND
+                }
+            }
+            await emit(dist_sensor_msg)
+            latest_messages["DISTANCE_SENSOR"] = {"server_ts": timestamp, "payload": dist_sensor_msg["payload"]}
+            
+            # Simulate SYS_STATUS
+            sys_msg = {
+                "type": "SYS_STATUS",
+                "server_ts": timestamp,
+                "payload": {
+                    "voltage_battery": random.randint(11000, 12600),
+                    "battery_remaining": random.randint(70, 100),
+                }
+            }
+            await emit(sys_msg)
+            latest_messages["SYS_STATUS"] = {"server_ts": timestamp, "payload": sys_msg["payload"]}
+            
+            # Log output
+            print(f"[SIM] GPS: lat={base_lat:.6f}, lon={base_lon:.6f}, alt={base_alt:.1f}m | Depth: {depth:.2f}m")
+            
+            await asyncio.sleep(0.1)  # 10Hz update rate
+            
+        except Exception as e:
+            print(f"Simulation mode error: {e}")
+            await asyncio.sleep(0.5)
+    
+    print("Simulation mode stopped.")
+
 async def verify_mission_count(expected: int, timeout=5):
     """Request the mission list and compare count; logs result via wslog + emits VERIFY messages."""
     if _mav is None:
@@ -280,12 +400,33 @@ def to_json_msg(msg) -> Dict[str, Any]:
                 "voltage_battery": getattr(msg, "voltage_battery", None),
                 "battery_remaining": getattr(msg, "battery_remaining", None),
             }
+        elif mtype == "RANGEFINDER":
+            # distance is in meters per MAVLink spec
+            base["payload"] = {
+                "distance": float(msg.distance),
+                "voltage": float(msg.voltage),
+            }
+        elif mtype == "DISTANCE_SENSOR":
+            # DISTANCE_SENSOR has current_distance (cm) and signal_quality (confidence %)
+            base["payload"] = {
+                "distance": float(msg.current_distance) / 100.0 if hasattr(msg, 'current_distance') else None,  # Convert cm to meters
+                "signal_quality": float(msg.signal_quality) if hasattr(msg, 'signal_quality') else None,  # 0-100%
+                "sensor_type": int(msg.type) if hasattr(msg, 'type') else None,
+                "orientation": int(msg.orientation) if hasattr(msg, 'orientation') else None,
+            }
         else:
-            d = msg.to_dict()
-            d.pop("payload", None)
-            base["payload"] = d
+            # For unknown message types, extract all scalar fields
+            payload = {}
+            for field in msg.fieldnames:
+                try:
+                    value = getattr(msg, field, None)
+                    if value is not None:
+                        payload[field] = value
+                except Exception:
+                    pass
+            base["payload"] = payload
     except Exception as e:
-        base["payload"] = {"error": str(e)}
+        base["payload"] = {"error": str(e), "msg_type": mtype}
 
     # <-- ensure no NaN/Inf ever leaves this function
     base["payload"] = _sanitize_numbers(base["payload"])
@@ -310,12 +451,104 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
     """
     global last_gps, last_att, _mav
     print("Starting MAVLink listener at", port)
+    
+    # Check if port exists (for serial connections)
+    import os
+    if port.startswith('/dev/') and not os.path.exists(port):
+        print(f"Warning: Serial port {port} does not exist. Waiting for device...")
+        # Wait up to 5 seconds for device to appear
+        import time
+        for i in range(5):
+            if os.path.exists(port):
+                print(f"Device {port} found!")
+                break
+            time.sleep(1)
+        if not os.path.exists(port):
+            print(f"Device {port} not found after 5 seconds. Running in simulation mode.")
+            # Run in simulation mode - generate dummy data
+            await simulation_mode(stop_event)
+            return
+    
     try:
         # open a listener (udpin) - stores connection in global _mav for shutdown
         _mav = mavutil.mavlink_connection(port, baud=baud_rate)
     except Exception as e:
-        print("Failed to open mavlink connection:", e)
+        print(f"Failed to open mavlink connection: {e}")
+        # Fall back to simulation mode
+        await simulation_mode(stop_event)
         return
+
+    try:
+        # Wait for heartbeat and request rangefinder data stream
+        print("Waiting for heartbeat...")
+        _mav.wait_heartbeat()
+        print(f"Heartbeat received from system {_mav.target_system}, component {_mav.target_component}")
+        
+        # Request rangefinder data at 10Hz
+        _mav.mav.request_data_stream_send(
+            _mav.target_system,
+            _mav.target_component,
+            mavutil.mavlink.MAV_DATA_STREAM_RAW_SENSORS,
+            1,  # start
+            10  # interval (Hz)
+        )
+        print("Requested RANGEFINDER data stream at 10Hz")
+        
+        # Also request DISTANCE_SENSOR which has confidence data
+        _mav.mav.request_data_stream_send(
+            _mav.target_system,
+            _mav.target_component,
+            mavutil.mavlink.MAV_DATA_STREAM_POSITION,
+            1,  # start
+            10  # interval (Hz)
+        )
+        print("Requested DISTANCE_SENSOR data stream at 10Hz")
+        
+        # Configure Blue Robotics Ping rangefinder if not already set
+        # Set RNGFND1_TYPE = 23 (BlueRoboticsPing)
+        print("Configuring RNGFND1_TYPE = 23 (BlueRobotics Ping)...")
+        _mav.mav.param_set_send(
+            _mav.target_system,
+            _mav.target_component,
+            b'RNGFND1_TYPE',
+            23,
+            mavutil.mavlink.MAV_PARAM_TYPE_UINT8
+        )
+        
+        # Set RNGFND1_ORIENT = 25 (downward facing for boat)
+        print("Configuring RNGFND1_ORIENT = 25 (down)...")
+        _mav.mav.param_set_send(
+            _mav.target_system,
+            _mav.target_component,
+            b'RNGFND1_ORIENT',
+            25,
+            mavutil.mavlink.MAV_PARAM_TYPE_UINT8
+        )
+        
+        # Set RNGFND1_MAX = 96m (reliable range)
+        print("Configuring RNGFND1_MAX = 96...")
+        _mav.mav.param_set_send(
+            _mav.target_system,
+            _mav.target_component,
+            b'RNGFND1_MAX',
+            96.0,
+            mavutil.mavlink.MAV_PARAM_TYPE_REAL32
+        )
+        
+        # Set RNGFND1_MIN = 0.3m
+        print("Configuring RNGFND1_MIN = 0.3...")
+        _mav.mav.param_set_send(
+            _mav.target_system,
+            _mav.target_component,
+            b'RNGFND1_MIN',
+            0.3,
+            mavutil.mavlink.MAV_PARAM_TYPE_REAL32
+        )
+        
+        print("Rangefinder configuration complete!")
+    except Exception as e:
+        print(f"Failed to setup data streams: {e}")
+        # Continue anyway - we might still get some data
 
     # Get the current asyncio event loop
     loop = asyncio.get_running_loop()
@@ -332,6 +565,9 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
                 None,  # Use the default ThreadPoolExecutor
                 blocking_recv
             )
+
+            if msg is None:
+                continue
 
             if msg.get_type() == "COMMAND_ACK":
                 try:
@@ -457,21 +693,41 @@ async def _serve():
     # start the reader task
     _reader_task = asyncio.create_task(mavlink_reader_loop(stop_event))
     print("MAVLink background reader task started.")
+    
+    # Give the reader a moment to start and print its init messages
+    await asyncio.sleep(0.5)
 
     # configure and start uvicorn server programmatically
-    # config = uvicorn.Config(app, host=WS_HOST, port=WS_PORT, log_level="info")
-    config = uvicorn.Config(
-        app,
-        host=WS_HOST,
-        port=WS_PORT,
-        ssl_keyfile="/home/amv-onboard/pleco-certs/amv-onboard.tailc2fe55.ts.net.key",
-        ssl_certfile="/home/amv-onboard/pleco-certs/amv-onboard.tailc2fe55.ts.net.crt",
-        log_level="info",
-    )
+    # SSL certificates may not exist in test environment - try without SSL first
+    ssl_keyfile = "/home/amv-onboard/pleco-certs/amv-onboard.tailc2fe55.ts.net.key"
+    ssl_certfile = "/home/amv-onboard/pleco-certs/amv-onboard.tailc2fe55.ts.net.crt"
+    
+    import os
+    if not os.path.exists(ssl_keyfile) or not os.path.exists(ssl_certfile):
+        print("SSL certificates not found, running without HTTPS")
+        config = uvicorn.Config(
+            app,
+            host=WS_HOST,
+            port=WS_PORT,
+            log_level="info",
+        )
+    else:
+        config = uvicorn.Config(
+            app,
+            host=WS_HOST,
+            port=WS_PORT,
+            ssl_keyfile=ssl_keyfile,
+            ssl_certfile=ssl_certfile,
+            log_level="info",
+        )
+    
     server = uvicorn.Server(config)
 
     # run the server; server.serve() returns when server stops
-    await server.serve()
+    try:
+        await server.serve()
+    except Exception as e:
+        print(f"Uvicorn server error: {e}")
 
     # server stopped — signal reader to stop
     print("Uvicorn server stopped; signaling reader to stop.")
@@ -479,7 +735,13 @@ async def _serve():
 
     # wait for reader to finish
     if _reader_task:
-        await _reader_task
+        try:
+            await asyncio.wait_for(_reader_task, timeout=5.0)
+        except asyncio.TimeoutError:
+            print("Reader task timed out, cancelling...")
+            _reader_task.cancel()
+        except Exception as e:
+            print(f"Reader task error: {e}")
     print("Shutdown complete.")
 
 
@@ -493,9 +755,9 @@ def main():
     except KeyboardInterrupt:
         # Ctrl+C pressed — asyncio.run will raise KeyboardInterrupt; ensure cleanup
         print("\nKeyboardInterrupt received — shutting down.")
-        # If more forced cleanup is needed it can be added here.
     except Exception as e:
-        print("Unhandled exception in main():", repr(e))
+        print(f"Unhandled exception in main(): {repr(e)}")
+        # Don't re-raise, just exit gracefully
 
 
 if __name__ == "__main__":

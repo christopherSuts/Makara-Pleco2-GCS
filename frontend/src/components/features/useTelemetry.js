@@ -7,7 +7,9 @@ import { toast } from "react-toastify";
 // Your WebSocket server URL
 // const WS_PRIMARY = "wss://10.10.10.3:9000/ws";
 // const WS_FALLBACK = "wss://100.117.19.50:9000/ws";
-const WS_URL = "wss://amv-onboard.tailc2fe55.ts.net:9000/ws";
+// Production: const WS_URL = "wss://amv-onboard.tailc2fe55.ts.net:9000/ws";
+// Local development (no SSL):
+const WS_URL = "ws://localhost:9000/ws";
 const RECONNECT_DELAY = 3000; // 3 seconds
 
 export function useTelemetry() {

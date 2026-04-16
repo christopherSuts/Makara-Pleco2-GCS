@@ -321,6 +321,8 @@ export default function HomePage() {
                 onStop={bathymetry.stopRecording}
                 onDownload={bathymetry.downloadCSV}
                 depthOverride={simulation.isSimulating ? simulation.depthValue : undefined}
+                currentDepth={bathymetry.currentDepth}
+                confidence={bathymetry.confidence}
               />
            </div>
 

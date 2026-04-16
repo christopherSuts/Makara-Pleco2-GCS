@@ -8,9 +8,29 @@ export function useBathymetry(telemetry, depthOverride) {
   const [bathymetryData, setBathymetryData] = useState([]);
   const intervalRef = useRef(null);
 
+  // Prefer RANGEFINDER (simple distance in meters), fall back to DISTANCE_SENSOR (cm converted to meters)
+  const rangeData = telemetry?.RANGEFINDER?.payload;
+  const distSensorData = telemetry?.DISTANCE_SENSOR?.payload;
   
-  // const lat = pos?.lat;
-  // const lon = pos?.lon;
+  let currentDepthValue = 0.0;
+  if (rangeData && rangeData.distance !== undefined && rangeData.distance !== null) {
+    currentDepthValue = rangeData.distance;
+  } else if (distSensorData && distSensorData.distance !== undefined && distSensorData.distance !== null) {
+    currentDepthValue = distSensorData.distance;  // Already converted to meters in backend
+  } else if (depthOverride !== undefined) {
+    currentDepthValue = depthOverride;
+  }
+  
+  const currentDepth = currentDepthValue;
+
+  // Get confidence (signal_quality) from DISTANCE_SENSOR (0-100%)
+  const confidence = (() => {
+    const distSensorData = telemetry?.DISTANCE_SENSOR?.payload;
+    if (distSensorData && distSensorData.signal_quality !== undefined && distSensorData.signal_quality !== null) {
+      return distSensorData.signal_quality;
+    }
+    return null;
+  })();
 
   const startRecording = useCallback(() => {
     setIsRecording(true);
@@ -30,8 +50,17 @@ export function useBathymetry(telemetry, depthOverride) {
     if (isRecording) {
       intervalRef.current = setInterval(() => {
         const posData = telemetry?.GLOBAL_POSITION_INT?.payload;
+        const rangeData = telemetry?.RANGEFINDER?.payload;
+        
+        // Use real RANGEFINDER data if available, otherwise fall back to override or 0
+        let depth = 0.0;
+        if (rangeData && rangeData.distance !== undefined && rangeData.distance !== null) {
+          depth = rangeData.distance;
+        } else if (depthOverride !== undefined) {
+          depth = depthOverride;
+        }
+        
         if (posData) {
-          const depth = depthOverride !== undefined ? depthOverride : 0.0;
           setBathymetryData((prev) => [
             ...prev,
             {
@@ -82,6 +111,8 @@ export function useBathymetry(telemetry, depthOverride) {
     isRecording,
     hasStarted,
     bathymetryData,
+    currentDepth,
+    confidence,
     startRecording,
     stopRecording,
     downloadCSV,
