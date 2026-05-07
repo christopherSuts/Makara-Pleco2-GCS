@@ -1,24 +1,68 @@
-export default function SidebarButton({ label, icon, children, menu, menuTitle }) {
+import { useEffect, useRef, useState } from "react";
+
+export default function SidebarButton({
+    label,
+    icon,
+    children,
+    menu,
+    menuTitle,
+    popupContent,
+    openOnClick = false,
+    disabled = false,
+    autoOpenToken,
+}) {
     const slug = (label || "menu").toLowerCase().replace(/\s+/g, "-");
     const titleText = menuTitle ?? label;
+    const [isOpen, setIsOpen] = useState(false);
+    const rootRef = useRef(null);
+
+    useEffect(() => {
+        if (!openOnClick) return undefined;
+        const onDocClick = (e) => {
+            if (!rootRef.current) return;
+            if (!rootRef.current.contains(e.target)) setIsOpen(false);
+        };
+        const onEsc = (e) => {
+            if (e.key === "Escape") setIsOpen(false);
+        };
+        document.addEventListener("mousedown", onDocClick);
+        document.addEventListener("keydown", onEsc);
+        return () => {
+            document.removeEventListener("mousedown", onDocClick);
+            document.removeEventListener("keydown", onEsc);
+        };
+    }, [openOnClick]);
+
+    useEffect(() => {
+        if (!openOnClick) return;
+        if (autoOpenToken == null) return;
+        setIsOpen(true);
+    }, [autoOpenToken, openOnClick]);
 
     return (
-        <div className="relative group">
+        <div ref={rootRef} className="relative group">
             <button
+                onClick={openOnClick ? () => setIsOpen((v) => !v) : undefined}
+                disabled={disabled}
                 className={[
                     "w-10 h-12 rounded-xl border text-amv-white flex items-center justify-center", // Added flex center
-                    "bg-amv-grey border-white/10 hover:bg-amv-grey/80", 
+                    "bg-amv-grey border-white/10 hover:bg-amv-grey/80",
                     "transition-all duration-200 ease-out will-change-transform",
-                    "shadow-[0_4px_12px_rgba(0,0,0,0.3)]", 
+                    "shadow-[0_4px_12px_rgba(0,0,0,0.3)]",
                     "hover:-translate-y-0.5",
                     "hover:shadow-[0_8px_20px_rgba(0,0,0,0.4)]",
                     "hover:ring-1 hover:ring-amv-maroon hover:ring-offset-1 hover:ring-offset-amv-black",
                     "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-amv-plum focus-visible:ring-offset-1 focus-visible:ring-offset-amv-black",
                     "active:translate-y-0 active:shadow-none",
                     "active:bg-amv-black active:border-white/20",
+                    "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0",
+                    openOnClick && isOpen
+                        ? "ring-2 ring-amv-maroon ring-offset-1 ring-offset-amv-black bg-amv-maroon/30 border-amv-maroon"
+                        : "",
                     "relative overflow-hidden",
                 ].join(" ")}
                 aria-label={label}
+                aria-pressed={openOnClick ? isOpen : undefined}
             >
                 {icon || children}
             </button>
@@ -29,13 +73,27 @@ export default function SidebarButton({ label, icon, children, menu, menuTitle }
             />
 
             {/* Popup menu with title */}
-            {Array.isArray(menu) && menu.length > 0 ? (
+            {popupContent ? (
+                <div
+                    className={[
+                        "absolute left-14 top-1/2 -translate-y-1/2 z-50",
+                        openOnClick
+                            ? (isOpen ? "opacity-100 translate-x-0 pointer-events-auto" : "opacity-0 translate-x-[-2px] pointer-events-none")
+                            : "opacity-0 translate-x-[-2px] pointer-events-none group-hover:opacity-100 group-hover:translate-x-0 group-hover:pointer-events-auto",
+                    ].join(" ")}
+                    role="dialog"
+                    aria-label={`${titleText} panel`}
+                >
+                    {popupContent}
+                </div>
+            ) : Array.isArray(menu) && menu.length > 0 ? (
                 <div
                     className={[
                         "absolute left-14 top-1/2 -translate-y-1/2",
                         // visible state
-                        "opacity-0 translate-x-[-2px] pointer-events-none",
-                        "group-hover:opacity-100 group-hover:translate-x-0 group-hover:pointer-events-auto",
+                        openOnClick
+                            ? (isOpen ? "opacity-100 translate-x-0 pointer-events-auto" : "opacity-0 translate-x-[-2px] pointer-events-none")
+                            : "opacity-0 translate-x-[-2px] pointer-events-none group-hover:opacity-100 group-hover:translate-x-0 group-hover:pointer-events-auto",
                         // stacking over bridge & header
                         "z-50",
                     ].join(" ")}

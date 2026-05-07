@@ -138,6 +138,33 @@ function AsvCenteringController({ centerMode, parsedAsvPosition }) {
   return null;
 }
 
+function MissionPathFocusController({ missionPath }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!Array.isArray(missionPath) || missionPath.length < 2) return;
+
+    const latLngs = missionPath
+      .map((p) => {
+        if (Array.isArray(p) && p.length >= 2) return [Number(p[0]), Number(p[1])];
+        return [Number(p?.lat), Number(p?.lng)];
+      })
+      .filter(([lat, lng]) => Number.isFinite(lat) && Number.isFinite(lng));
+
+    if (latLngs.length < 2) return;
+
+    const bounds = L.latLngBounds(latLngs);
+    map.fitBounds(bounds, {
+      padding: [60, 60],
+      maxZoom: 19,
+      animate: true,
+      duration: 0.7,
+    });
+  }, [map, missionPath]);
+
+  return null;
+}
+
 function MouseCoordinates() {
   const [position, setPosition] = useState({ lat: null, lng: null });
 
@@ -256,6 +283,7 @@ export default function LeafletMap({
           centerMode={centerMode}
           parsedAsvPosition={parsedAsvPosition}
         />
+        <MissionPathFocusController missionPath={missionPath} />
 
         <AsvMarker parsedAsvPosition={parsedAsvPosition} />
         <GcsMarker gcsPosition={gcsPosition} />

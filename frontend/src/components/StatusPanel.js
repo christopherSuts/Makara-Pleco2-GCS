@@ -50,13 +50,14 @@ const calculateBatteryTime = (currentBattery) => {
   return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 };
 
-export default function StatusPanel({ telemetry, isBackendConnected }) {
+export default function StatusPanel({
+  telemetry,
+  isBackendConnected,
+}) {
   // 1. Connection Health (based on HEARTBEAT + WebSocket)
   const hb = telemetry?.HEARTBEAT;
   const lastHeartbeat = hb?.server_ts ? new Date(hb.server_ts).getTime() : 0;
   const now = new Date().getTime();
-  const path_length = 2000;
-  const avg_speed = 20;
 
   // Logical connection: Backend WS is connected AND Heartbeat is fresh (<3s)
   const isHeartbeatFresh = lastHeartbeat > 0 && (now - lastHeartbeat) < 3000;
@@ -81,7 +82,7 @@ export default function StatusPanel({ telemetry, isBackendConnected }) {
 
   // Calculate battery time estimation based on servo PWM
   const batteryTimeEst = calculateBatteryTime(maxBattery);
-  const timeEstimation = path_length / avg_speed; // in hours
+  
   // --- IGNORE ---
   const speedOverground = telemetry?.VFR_HUD?.payload?.groundspeed ?? 0;
 
@@ -150,10 +151,10 @@ export default function StatusPanel({ telemetry, isBackendConnected }) {
           <span className="font-mono font-bold text-amv-white">{battVolts} V</span>
         </div>
 
-        <div className="bg-amv-black/30 border border-white/5 p-1.5 rounded-xl flex justify-between">
+        {/* <div className="bg-amv-black/30 border border-white/5 p-1.5 rounded-xl flex justify-between">
           <span>Batt Estimate:</span>
           <span className="font-mono font-bold text-amv-white">{batteryTimeEst}</span>
-        </div>
+        </div> */}
 
         <div className="bg-amv-black/30 border border-white/5 p-1.5 rounded-xl flex justify-between">
           <span>Motor Batt:</span>
@@ -165,10 +166,10 @@ export default function StatusPanel({ telemetry, isBackendConnected }) {
           <span className="font-mono font-bold text-amv-white">{speedOverground.toFixed(2)}</span>
         </div>
 
-        <div className="bg-amv-black/30 border border-white/5 p-1.5 rounded-xl flex justify-between">
+        {/* <div className="bg-amv-black/30 border border-white/5 p-1.5 rounded-xl flex justify-between">
           <span>Time Estimation:</span>
           <span className="font-mono font-bold text-amv-white">{timeEstimation.toFixed(2)} s</span>
-        </div>
+        </div> */}
 
         <div className="bg-amv-black/30 border border-white/5 p-1.5 rounded-xl flex justify-between">
           <span>Killswitch:</span>
