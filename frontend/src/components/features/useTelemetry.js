@@ -5,7 +5,9 @@ import { useState, useEffect, useRef } from "react";
 import { toast } from "react-toastify";
 
 // Your WebSocket server URL
-const WS_URL = "ws://localhost:9000/ws";
+// const WS_PRIMARY = "wss://10.10.10.3:9000/ws";
+// const WS_FALLBACK = "wss://100.117.19.50:9000/ws";
+const WS_URL = "wss://amv-onboard.tailc2fe55.ts.net:9000/ws";
 const RECONNECT_DELAY = 3000; // 3 seconds
 
 export function useTelemetry() {
@@ -15,8 +17,8 @@ export function useTelemetry() {
   const reconnectTimer = useRef(null);
 
   useEffect(() => {
-    const connect = () => {
-      const ws = new WebSocket(WS_URL);
+    const connect = (url = WS_URL) => {
+      const ws = new WebSocket(url);
       wsRef.current = ws;
 
       ws.onopen = () => setIsConnected(true);
@@ -52,6 +54,7 @@ export function useTelemetry() {
         clearTimeout(reconnectTimer.current);
         reconnectTimer.current = setTimeout(connect, 3000);
       };
+
       ws.onerror = (err) => console.error("WS error", err);
     };
 

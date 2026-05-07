@@ -3,8 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node server.js",
-    "dev:pymavlink": "next dev --turbopack",
+    "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
@@ -13,7 +12,7 @@
     "@turf/turf": "^7.3.4",
     "geodesy": "^2.4.0",
     "leaflet": "^1.9.4",
-    "next": "^15.5.4",
+    "next": "15.5.9",
     "node-mavlink": "^2.3.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
