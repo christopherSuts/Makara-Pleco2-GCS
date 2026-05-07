@@ -1,3 +1,14 @@
 # .env
 frontend/logs/
+frontend/node_modules/
+frontend/.next/
 old_backend/
+backend/__pycache__/
+backend/path_logs/
+*.pyc
+*.tlog
+*.tlog.raw
+*.parm
+*.ndjson
+sslkeys.log
+frontend/eeprom.bin
