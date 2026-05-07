@@ -22,10 +22,38 @@ function pointInPoly(lat, lng, poly) {
   return inside;
 }
 
+function haversineMeters(a, b) {
+  const R = 6371000;
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const lat1 = toRad(a.lat);
+  const lat2 = toRad(b.lat);
+  const s1 = Math.sin(dLat / 2);
+  const s2 = Math.sin(dLng / 2);
+  const h = s1 * s1 + Math.cos(lat1) * Math.cos(lat2) * s2 * s2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function computePathLengthMeters(points) {
+  if (!Array.isArray(points) || points.length < 2) return 0;
+  let total = 0;
+  for (let i = 1; i < points.length; i++) total += haversineMeters(points[i - 1], points[i]);
+  return total;
+}
+
 export function usePath() {
   const [line, setLine] = useState([]);            // Array<[lat,lng]>
   const [saved, setSaved] = useState([]);          // [{id,name,points}]
   const hasPath = line.length > 1;
+  const pathLengthMeters = useMemo(() => {
+    if (!Array.isArray(line) || line.length < 2) return 0;
+    let total = 0;
+    for (let i = 1; i < line.length; i++) {
+      total += haversineMeters(line[i - 1], line[i]);
+    }
+    return total;
+  }, [line]);
   const [lastParams, setLastParams] = useState({
     orientation: "TB",
     rowGapMeters: 5,
@@ -149,6 +177,10 @@ export function usePath() {
       }
 
       setLine(result);
+      return {
+        pointCount: result.length,
+        pathLengthMeters: computePathLengthMeters(result),
+      };
     },
     [bboxFromBoundary]
   );
@@ -279,5 +311,15 @@ export function usePath() {
   );
   const clear = useCallback(() => setLine([]), []);
 
-  return { line, saved, hasPath, generate, save, load, clear, lastParams };
+  return {
+    line,
+    saved,
+    hasPath,
+    pathLengthMeters,
+    generate,
+    save,
+    load,
+    clear,
+    lastParams,
+  };
 }

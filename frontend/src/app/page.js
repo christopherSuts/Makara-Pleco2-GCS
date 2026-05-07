@@ -22,6 +22,59 @@ import { useTelemetry } from "@/components/features/useTelemetry";
 import { pathToMissionItems } from "@/lib/missionWP";
 import { toast } from "react-toastify";
 
+function haversineMeters(a, b) {
+    const R = 6371000;
+    const toRad = (deg) => (deg * Math.PI) / 180;
+    const dLat = toRad(b.lat - a.lat);
+    const dLng = toRad(b.lng - a.lng);
+    const lat1 = toRad(a.lat);
+    const lat2 = toRad(b.lat);
+    const s1 = Math.sin(dLat / 2);
+    const s2 = Math.sin(dLng / 2);
+    const h = s1 * s1 + Math.cos(lat1) * Math.cos(lat2) * s2 * s2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+function pathDistanceMeters(points) {
+    if (!Array.isArray(points) || points.length < 2) return 0;
+    let total = 0;
+    for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1];
+        const b = points[i];
+        if (!Number.isFinite(a?.lat) || !Number.isFinite(a?.lng) || !Number.isFinite(b?.lat) || !Number.isFinite(b?.lng)) continue;
+        total += haversineMeters(a, b);
+    }
+    return total;
+}
+
+function formatMissionTime(pathLengthMeters) {
+    const speedMps = 5;
+    const meters = Number(pathLengthMeters || 0);
+    const estimatedSeconds = meters / speedMps;
+    const hh = Math.floor(estimatedSeconds / 3600);
+    const mm = Math.floor((estimatedSeconds % 3600) / 60);
+    const ss = Math.floor(estimatedSeconds % 60);
+    const etaDuration = `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+    const etaCompleteDate = new Date(Date.now() + estimatedSeconds * 1000);
+    const etaComplete = etaCompleteDate.toLocaleString([], {
+        year: "numeric",
+        month: "short",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+    });
+    return { etaDuration, etaComplete };
+}
+
+function estimateBatteryNeededMah(pathLengthMeters) {
+    const speedMps = 5;
+    const iTotalAmp = 4.4; // I_total = I_idle + 2 * I_thruster_each
+    const meters = Number(pathLengthMeters || 0);
+    const missionHours = (meters / speedMps) / 3600;
+    return Math.max(0, iTotalAmp * missionHours * 1000);
+}
+
 export default function HomePage() {
     const { telemetry, isConnected, send } = useTelemetry();
     const asvPosition = telemetry.GLOBAL_POSITION_INT;
@@ -48,6 +101,12 @@ export default function HomePage() {
 
 
     const [bathymetryOpen, setBathymetryOpen] = useState(false);
+    const [pathSummaryOpen, setPathSummaryOpen] = useState(false);
+    const [missionAutoOpenToken, setMissionAutoOpenToken] = useState(0);
+    const [pathSummary, setPathSummary] = useState({
+        pointCount: 0,
+        pathLengthMeters: 0,
+    });
 
     const sendMissionOverWS = () => {
         if (!path.hasPath) {
@@ -327,6 +386,70 @@ export default function HomePage() {
                             }
                         ]}
                     />
+                    <SidebarButton
+                        label="Mission"
+                        openOnClick
+                        autoOpenToken={missionAutoOpenToken}
+                        icon={
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-6 h-6">
+                                <path d="M8 6h11M8 12h11M8 18h11" />
+                                <circle cx="4" cy="6" r="1.2" fill="currentColor" />
+                                <circle cx="4" cy="12" r="1.2" fill="currentColor" />
+                                <circle cx="4" cy="18" r="1.2" fill="currentColor" />
+                            </svg>
+                        }
+                        popupContent={
+                            <div className="min-w-80 rounded-2xl border border-white/10 bg-amv-grey/95 text-amv-white shadow-[0_16px_40px_rgba(0,0,0,0.5)] backdrop-blur-md overflow-hidden">
+                                <div className="px-3 py-1.5 bg-amv-maroon/25 border-b border-white/10 text-[11px] uppercase tracking-[0.16em] text-amv-white/85">
+                                    Mission Monitor
+                                </div>
+                                {pathSummaryOpen ? (
+                                    <div className="space-y-3 text-xs px-3 py-3">
+                                        <div className="text-sm font-semibold text-amv-white">Current Mission</div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div className="rounded-lg border border-white/10 bg-amv-black/25 px-3 py-2">
+                                                <div className="text-[11px] uppercase tracking-wide text-amv-white/65">Waypoints</div>
+                                                <div className="font-mono font-bold text-lg leading-tight">{pathSummary.pointCount}</div>
+                                            </div>
+                                            <div className="rounded-lg border border-white/10 bg-amv-black/25 px-3 py-2">
+                                                <div className="text-[11px] uppercase tracking-wide text-amv-white/65">Distance</div>
+                                                <div className="font-mono font-bold text-lg leading-tight">
+                                                    {(Number(pathSummary.pathLengthMeters || 0) / 1000).toFixed(3)} km
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="rounded-lg border border-white/10 bg-amv-black/25 px-3 py-3 space-y-2">
+                                            <div className="h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
+                                                <div className="h-full w-full bg-gradient-to-r from-amv-maroon via-rose-400 to-orange-300" />
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span className="text-amv-white/70">Estimated Time</span>
+                                                <span className="font-mono font-bold">{formatMissionTime(pathSummary.pathLengthMeters).etaDuration}</span>
+                                            </div>
+                                            <div className="space-y-0.5">
+                                                <div className="text-amv-white/70">Estimated Complete</div>
+                                                <div className="font-mono font-bold leading-snug text-[11px]">
+                                                    {formatMissionTime(pathSummary.pathLengthMeters).etaComplete}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div className="rounded-lg border border-white/10 bg-amv-black/25 px-3 py-2">
+                                            <div className="text-[11px] uppercase tracking-wide text-amv-white/65">
+                                                Estimated Battery Needed
+                                            </div>
+                                            <div className="font-mono font-bold text-lg leading-tight">
+                                                {Math.round(estimateBatteryNeededMah(pathSummary.pathLengthMeters))} mAh
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="px-3 py-3 text-xs text-amv-white/70">
+                                        No mission generated yet.
+                                    </div>
+                                )}
+                            </div>
+                        }
+                    />
                 </aside>
 
 
@@ -447,6 +570,12 @@ export default function HomePage() {
                     onClose={() => setPathLoadOpen(false)}
                     onImport={(obj) => {
                         path.load(obj);
+                        setPathSummary({
+                            pointCount: obj?.points?.length ?? 0,
+                            pathLengthMeters: pathDistanceMeters(obj?.points ?? []),
+                        });
+                        setPathSummaryOpen(true);
+                        setMissionAutoOpenToken((v) => v + 1);
                         setPathLoadOpen(false);
                     }}
                 />
@@ -458,12 +587,17 @@ export default function HomePage() {
                         const b = boundaries.saved?.find(
                             (x) => x.id === boundaries.shownId
                         );
-                        path.generate({
+                        const summary = path.generate({
                             orientation: pendingOrientation,
                             rowGapMeters,
                             wpGapMeters,
                             boundary: b || { points: boundaries.shownPoints },
                         });
+                        if (summary?.pointCount > 1) {
+                            setPathSummary(summary);
+                            setPathSummaryOpen(true);
+                            setMissionAutoOpenToken((v) => v + 1);
+                        }
                         setPathParamsOpen(false);
                     }}
                 />
