@@ -22,6 +22,8 @@ import { useTelemetry } from "@/components/features/useTelemetry";
 import { pathToMissionItems } from "@/lib/missionWP";
 import { toast } from "react-toastify";
 
+const ASSUMED_SPEED_MPS = 0.514444; // 1 knot in meters/second
+
 function haversineMeters(a, b) {
     const R = 6371000;
     const toRad = (deg) => (deg * Math.PI) / 180;
@@ -48,9 +50,8 @@ function pathDistanceMeters(points) {
 }
 
 function formatMissionTime(pathLengthMeters) {
-    const speedMps = 5;
     const meters = Number(pathLengthMeters || 0);
-    const estimatedSeconds = meters / speedMps;
+    const estimatedSeconds = meters / ASSUMED_SPEED_MPS;
     const hh = Math.floor(estimatedSeconds / 3600);
     const mm = Math.floor((estimatedSeconds % 3600) / 60);
     const ss = Math.floor(estimatedSeconds % 60);
@@ -68,10 +69,9 @@ function formatMissionTime(pathLengthMeters) {
 }
 
 function estimateBatteryNeededMah(pathLengthMeters) {
-    const speedMps = 5;
     const iTotalAmp = 4.4; // I_total = I_idle + 2 * I_thruster_each
     const meters = Number(pathLengthMeters || 0);
-    const missionHours = (meters / speedMps) / 3600;
+    const missionHours = (meters / ASSUMED_SPEED_MPS) / 3600;
     return Math.max(0, iTotalAmp * missionHours * 1000);
 }
 
@@ -423,11 +423,11 @@ export default function HomePage() {
                                                 <div className="h-full w-full bg-gradient-to-r from-amv-maroon via-rose-400 to-orange-300" />
                                             </div>
                                             <div className="flex justify-between">
-                                                <span className="text-amv-white/70">Estimated Time</span>
+                                                <span className="text-amv-white/70">Estimated Time @1knot/s</span>
                                                 <span className="font-mono font-bold">{formatMissionTime(pathSummary.pathLengthMeters).etaDuration}</span>
                                             </div>
                                             <div className="space-y-0.5">
-                                                <div className="text-amv-white/70">Estimated Complete</div>
+                                                <div className="text-amv-white/70">Estimated Complete @1knot/s</div>
                                                 <div className="font-mono font-bold leading-snug text-[11px]">
                                                     {formatMissionTime(pathSummary.pathLengthMeters).etaComplete}
                                                 </div>

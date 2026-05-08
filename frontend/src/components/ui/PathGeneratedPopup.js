@@ -1,5 +1,7 @@
 "use client";
 
+const ASSUMED_SPEED_MPS = 0.514444; // 1 knot in meters/second
+
 export default function PathGeneratedPopup({
   open,
   pointCount = 0,
@@ -10,8 +12,7 @@ export default function PathGeneratedPopup({
 
   const meters = Number(pathLengthMeters || 0);
   const km = meters / 1000;
-  const speedMps = 5;
-  const estimatedSeconds = meters / speedMps;
+  const estimatedSeconds = meters / ASSUMED_SPEED_MPS;
   const hh = Math.floor(estimatedSeconds / 3600);
   const mm = Math.floor((estimatedSeconds % 3600) / 60);
   const ss = Math.floor(estimatedSeconds % 60);
@@ -45,11 +46,11 @@ export default function PathGeneratedPopup({
           </div>
           <div className="mt-2 text-xs space-y-1">
             <div className="flex justify-between">
-              <span className="text-cyan-100/80">Estimated Time:</span>
+              <span className="text-cyan-100/80">Estimated Time @1knot/s:</span>
               <span className="font-mono font-bold">{eta}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-cyan-100/80">Estimated Complete:</span>
+              <span className="text-cyan-100/80">Estimated Complete @1knot/s:</span>
               <span className="font-mono font-bold text-right">{etaComplete}</span>
             </div>
           </div>
@@ -73,7 +74,7 @@ export default function PathGeneratedPopup({
               <div className="h-full w-full bg-gradient-to-r from-cyan-300 via-sky-300 to-cyan-200" />
             </div>
             <div className="text-[11px] text-cyan-100/75">
-              Estimated from current path length.
+              Estimated from current path length @1knot/s.
             </div>
           </div>
         </div>
