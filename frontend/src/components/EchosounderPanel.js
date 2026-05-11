@@ -21,8 +21,8 @@ export default function EchosounderPanel({ telemetry, isRecording, onStart, onSt
     : "–";
 
   const pos = telemetry?.GLOBAL_POSITION_INT?.payload;
-  const lat = pos?.lat ? (pos.lat / 1e7).toFixed(6) : "–";
-  const lon = pos?.lon ? (pos.lon / 1e7).toFixed(6) : "–";
+  const lat = pos?.lat ? (pos.lat).toFixed(6) : "–";
+  const lon = pos?.lon ? (pos.lon).toFixed(6) : "–";
 
   const maxDisplayDepth = 20;
   const sensorY = 30;
