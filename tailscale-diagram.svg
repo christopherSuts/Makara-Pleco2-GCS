@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 780" width="900" height="780" font-family="Inter, Segoe UI, Arial, sans-serif">
+  <!-- Background -->
+  <rect width="900" height="780" fill="#F0F4FF" rx="16"/>
+
+  <!-- Title -->
+  <text x="450" y="38" text-anchor="middle" font-size="17" font-weight="700" fill="#1E293B">Makara Pleco2 GCS — System Architecture</text>
+  <text x="450" y="56" text-anchor="middle" font-size="11" fill="#64748B">Tailscale VPN IP used as single endpoint in both OFFLINE and ONLINE mode</text>
+
+  <!-- ══════════ OPERATOR BLOCK ══════════ -->
+  <rect x="220" y="72" width="460" height="64" rx="12" fill="#3B82F6" opacity="0.15" stroke="#3B82F6" stroke-width="1.5"/>
+  <text x="450" y="95" text-anchor="middle" font-size="13" font-weight="700" fill="#1D4ED8">OPERATOR (Browser)</text>
+  <text x="450" y="112" text-anchor="middle" font-size="10.5" fill="#1E40AF">https://makara-pleco2-gcs-nu.vercel.app</text>
+  <text x="450" y="127" text-anchor="middle" font-size="9.5" fill="#3B82F6">Vercel CDN — static Next.js, no local run needed</text>
+
+  <!-- Arrow down from Operator -->
+  <line x1="450" y1="136" x2="450" y2="162" stroke="#64748B" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <polygon points="450,168 445,158 455,158" fill="#64748B"/>
+
+  <!-- WebSocket label -->
+  <rect x="240" y="172" width="420" height="28" rx="6" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="1"/>
+  <text x="450" y="183" text-anchor="middle" font-size="9" fill="#64748B">WebSocket (same endpoint in both modes)</text>
+  <text x="450" y="195" text-anchor="middle" font-size="9.5" font-weight="600" fill="#0F172A">wss://amv-onboard.tailc2fe55.ts.net:9000/ws</text>
+
+  <!-- Arrow down to Tailscale -->
+  <line x1="450" y1="200" x2="450" y2="222" stroke="#64748B" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <polygon points="450,228 445,218 455,218" fill="#64748B"/>
+
+  <!-- ══════════ TAILSCALE LAYER ══════════ -->
+  <rect x="140" y="228" width="620" height="54" rx="12" fill="#7C3AED" opacity="0.12" stroke="#7C3AED" stroke-width="1.5"/>
+  <text x="450" y="251" text-anchor="middle" font-size="13" font-weight="700" fill="#5B21B6">Tailscale VPN Layer</text>
+  <text x="450" y="268" text-anchor="middle" font-size="10" fill="#6D28D9">Resolves amv-onboard.tailc2fe55.ts.net → Tailscale IP · selects best path automatically</text>
+
+  <!-- Split arrow down-left and down-right -->
+  <line x1="310" y1="282" x2="310" y2="306" stroke="#64748B" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <polygon points="310,312 305,302 315,302" fill="#64748B"/>
+  <line x1="590" y1="282" x2="590" y2="306" stroke="#64748B" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <polygon points="590,312 585,302 595,302" fill="#64748B"/>
+  <!-- Horizontal connector line -->
+  <line x1="310" y1="282" x2="590" y2="282" stroke="#64748B" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+  <!-- ══════════ OFFLINE MODE BOX ══════════ -->
+  <rect x="60" y="312" width="330" height="210" rx="12" fill="#ECFDF5" stroke="#10B981" stroke-width="1.5"/>
+  <!-- Badge -->
+  <rect x="96" y="304" width="132" height="20" rx="10" fill="#10B981"/>
+  <text x="162" y="317" text-anchor="middle" font-size="9.5" font-weight="700" fill="white">OFFLINE MODE (default)</text>
+  <text x="225" y="338" text-anchor="middle" font-size="9.5" fill="#065F46">Tailscale P2P direct path</text>
+
+  <!-- Laptop GCS offline -->
+  <rect x="110" y="348" width="130" height="36" rx="8" fill="#D1FAE5" stroke="#6EE7B7" stroke-width="1"/>
+  <text x="175" y="363" text-anchor="middle" font-size="10" font-weight="600" fill="#065F46">Laptop GCS</text>
+  <text x="175" y="377" text-anchor="middle" font-size="9" fill="#065F46">[Ethernet]</text>
+
+  <!-- Arrow down -->
+  <line x1="175" y1="384" x2="175" y2="400" stroke="#10B981" stroke-width="1.5"/>
+  <polygon points="175,406 170,396 180,396" fill="#10B981"/>
+
+  <!-- Ubiquiti basestation -->
+  <rect x="90" y="406" width="170" height="36" rx="8" fill="#D1FAE5" stroke="#6EE7B7" stroke-width="1"/>
+  <text x="175" y="420" text-anchor="middle" font-size="9.5" font-weight="600" fill="#065F46">Ubiquiti Rocket 5AC</text>
+  <text x="175" y="434" text-anchor="middle" font-size="8.5" fill="#047857">Basestation · 10.10.10.56</text>
+
+  <!-- 5GHz label -->
+  <text x="175" y="454" text-anchor="middle" font-size="8.5" fill="#6EE7B7">▼ 5 GHz RF link ▼</text>
+
+  <!-- Ubiquiti onboard -->
+  <rect x="90" y="458" width="170" height="36" rx="8" fill="#D1FAE5" stroke="#6EE7B7" stroke-width="1"/>
+  <text x="175" y="472" text-anchor="middle" font-size="9.5" font-weight="600" fill="#065F46">Ubiquiti Rocket 5AC</text>
+  <text x="175" y="486" text-anchor="middle" font-size="8.5" fill="#047857">Onboard · 10.10.10.55</text>
+
+  <!-- Arrow down -->
+  <line x1="175" y1="494" x2="175" y2="506" stroke="#10B981" stroke-width="1.5"/>
+  <polygon points="175,512 170,502 180,502" fill="#10B981"/>
+  <text x="175" y="519" text-anchor="middle" font-size="8.5" fill="#6EE7B7">[Ethernet]</text>
+
+  <!-- ══════════ ONLINE MODE BOX ══════════ -->
+  <rect x="510" y="312" width="330" height="210" rx="12" fill="#EFF6FF" stroke="#3B82F6" stroke-width="1.5"/>
+  <!-- Badge -->
+  <rect x="546" y="304" width="132" height="20" rx="10" fill="#3B82F6"/>
+  <text x="612" y="317" text-anchor="middle" font-size="9.5" font-weight="700" fill="white">ONLINE MODE (fallback)</text>
+  <text x="675" y="338" text-anchor="middle" font-size="9.5" fill="#1E40AF">Tailscale via DERP relay</text>
+
+  <!-- Laptop GCS online -->
+  <rect x="560" y="348" width="130" height="36" rx="8" fill="#DBEAFE" stroke="#93C5FD" stroke-width="1"/>
+  <text x="625" y="363" text-anchor="middle" font-size="10" font-weight="600" fill="#1E3A8A">Laptop GCS</text>
+  <text x="625" y="377" text-anchor="middle" font-size="9" fill="#1E3A8A">[Internet]</text>
+
+  <!-- Arrow down -->
+  <line x1="625" y1="384" x2="625" y2="400" stroke="#3B82F6" stroke-width="1.5"/>
+  <polygon points="625,406 620,396 630,396" fill="#3B82F6"/>
+
+  <!-- DERP Relay -->
+  <rect x="540" y="406" width="170" height="36" rx="8" fill="#DBEAFE" stroke="#93C5FD" stroke-width="1"/>
+  <text x="625" y="420" text-anchor="middle" font-size="9.5" font-weight="600" fill="#1E3A8A">Tailscale DERP Relay</text>
+  <text x="625" y="434" text-anchor="middle" font-size="8.5" fill="#1D4ED8">Cloud relay node</text>
+
+  <!-- Arrow down -->
+  <line x1="625" y1="442" x2="625" y2="458" stroke="#3B82F6" stroke-width="1.5"/>
+  <polygon points="625,464 620,454 630,454" fill="#3B82F6"/>
+
+  <!-- 4G LTE Modem -->
+  <rect x="540" y="464" width="170" height="36" rx="8" fill="#DBEAFE" stroke="#93C5FD" stroke-width="1"/>
+  <text x="625" y="478" text-anchor="middle" font-size="9.5" font-weight="600" fill="#1E3A8A">4G LTE Modem</text>
+  <text x="625" y="492" text-anchor="middle" font-size="8.5" fill="#1D4ED8">[USB / Ethernet]</text>
+
+  <!-- Arrow down -->
+  <line x1="625" y1="500" x2="625" y2="512" stroke="#3B82F6" stroke-width="1.5"/>
+  <polygon points="625,518 620,508 630,508" fill="#3B82F6"/>
+
+  <!-- ══════════ CONVERGING ARROWS to Jetson ══════════ -->
+  <!-- Left path: offline bottom to Jetson -->
+  <line x1="175" y1="522" x2="175" y2="560" stroke="#10B981" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <line x1="175" y1="560" x2="450" y2="560" stroke="#64748B" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+  <!-- Right path: online bottom to Jetson -->
+  <line x1="625" y1="522" x2="625" y2="560" stroke="#3B82F6" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <line x1="625" y1="560" x2="450" y2="560" stroke="#64748B" stroke-width="1.5" stroke-dasharray="4,3"/>
+
+  <!-- Arrow from merge point down -->
+  <line x1="450" y1="560" x2="450" y2="578" stroke="#64748B" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <polygon points="450,584 445,574 455,574" fill="#64748B"/>
+
+  <!-- Merge label -->
+  <text x="450" y="573" text-anchor="middle" font-size="8.5" fill="#64748B">both paths arrive via Tailscale</text>
+
+  <!-- ══════════ JETSON BLOCK ══════════ -->
+  <rect x="140" y="584" width="620" height="78" rx="12" fill="#FEF3C7" stroke="#F59E0B" stroke-width="2"/>
+  <text x="450" y="607" text-anchor="middle" font-size="13" font-weight="700" fill="#92400E">Jetson Orin NX</text>
+  <text x="450" y="623" text-anchor="middle" font-size="10" fill="#78350F">LAN IP: 10.10.10.3  ·  Tailscale IP: amv-onboard.tailc2fe55.ts.net  (100.x.x.x)</text>
+  <text x="450" y="639" text-anchor="middle" font-size="10" fill="#92400E" font-weight="600">middleware-Arch2.py  (FastAPI + pymavlink)  @  port 9000</text>
+  <text x="450" y="654" text-anchor="middle" font-size="9" fill="#B45309">GCS connects via Tailscale IP — LAN IP is internal only</text>
+
+  <!-- Arrow down from Jetson -->
+  <line x1="338" y1="662" x2="290" y2="690" stroke="#94A3B8" stroke-width="1.5"/>
+  <polygon points="287,695 284,683 296,687" fill="#94A3B8"/>
+  <text x="300" y="680" text-anchor="middle" font-size="8.5" fill="#64748B">UART/USB</text>
+
+  <line x1="562" y1="662" x2="610" y2="690" stroke="#94A3B8" stroke-width="1.5"/>
+  <polygon points="613,695 602,687 614,683" fill="#94A3B8"/>
+  <text x="600" y="680" text-anchor="middle" font-size="8.5" fill="#64748B">UART/USB</text>
+
+  <!-- ══════════ PIXHAWK ══════════ -->
+  <rect x="160" y="695" width="180" height="56" rx="10" fill="#FDE68A" stroke="#F59E0B" stroke-width="1.5"/>
+  <text x="250" y="718" text-anchor="middle" font-size="11" font-weight="700" fill="#78350F">Pixhawk / FCU</text>
+  <text x="250" y="734" text-anchor="middle" font-size="9.5" fill="#92400E">ArduPilot autopilot</text>
+  <text x="250" y="747" text-anchor="middle" font-size="8.5" fill="#B45309">MAVLink telemetry</text>
+
+  <!-- ══════════ ECHOSOUNDER ══════════ -->
+  <rect x="560" y="695" width="180" height="56" rx="10" fill="#FDE68A" stroke="#F59E0B" stroke-width="1.5"/>
+  <text x="650" y="718" text-anchor="middle" font-size="11" font-weight="700" fill="#78350F">Echosounder</text>
+  <text x="650" y="734" text-anchor="middle" font-size="9.5" fill="#92400E">T500 / Sonar</text>
+  <text x="650" y="747" text-anchor="middle" font-size="8.5" fill="#B45309">Depth sensing</text>
+
+  <!-- Legend -->
+  <rect x="60" y="756" width="780" height="18" rx="6" fill="none"/>
+  <rect x="70" y="759" width="10" height="10" rx="2" fill="#10B981"/>
+  <text x="85" y="769" font-size="9" fill="#374151">Offline / direct RF path</text>
+  <rect x="200" y="759" width="10" height="10" rx="2" fill="#3B82F6"/>
+  <text x="215" y="769" font-size="9" fill="#374151">Online / DERP relay path</text>
+  <rect x="340" y="759" width="10" height="10" rx="2" fill="#7C3AED"/>
+  <text x="355" y="769" font-size="9" fill="#374151">Tailscale VPN (both modes)</text>
+  <rect x="500" y="759" width="10" height="10" rx="2" fill="#F59E0B"/>
+  <text x="515" y="769" font-size="9" fill="#374151">Onboard compute / hardware</text>
+  <line x1="650" y1="764" x2="670" y2="764" stroke="#64748B" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <text x="675" y="769" font-size="9" fill="#374151">Data flow</text>
+</svg>
