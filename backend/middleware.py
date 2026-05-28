@@ -7,20 +7,16 @@ from typing import Dict, Any, Set, Optional
 
 import os
 
-import serial
-from serial.tools import list_ports
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import uvicorn
 
 from pymavlink import mavutil
 
-# CONFIG - edit if your MAVProxy uses a different bind/port
-MAVLINK_BIND = "0.0.0.0"  # listen on all interfaces
-MAVLINK_PORT = 14555  # match MAVProxy broadcast port
+# CONFIG
+MAVLINK_PORT = "/dev/ttyACM0"
+MAVLINK_BAUD = 115200
 WS_HOST = "0.0.0.0"
 WS_PORT = 9000
-SERIAL_BAUD = 115200
-SERIAL_PORT = None
 
 app = FastAPI()
 clients: Set[WebSocket] = set()
@@ -44,68 +40,6 @@ _reader_task: Optional[asyncio.Task] = None
 # Last known echosounder depth (meters)
 last_depth_m: Optional[float] = None
 
-
-def find_serial_port() -> Optional[str]:
-    for p in list_ports.comports():
-        if "usbmodem" in p.device or "usbserial" in p.device:
-            return p.device.replace("/dev/tty.", "/dev/cu.")
-    return None
-
-
-async def serial_reader_loop(stop_event: asyncio.Event):
-    global SERIAL_PORT
-
-    SERIAL_PORT = find_serial_port()
-    if SERIAL_PORT is None:
-        wslog("error", "SERIAL: no device found")
-        return
-
-    wslog("info", f"SERIAL: connecting to {SERIAL_PORT}")
-
-    try:
-        ser = serial.Serial(SERIAL_PORT, SERIAL_BAUD, timeout=1)
-        await asyncio.sleep(2)
-    except Exception as e:
-        wslog("error", f"SERIAL open failed: {e}")
-        return
-
-    loop = asyncio.get_running_loop()
-
-    def blocking_read():
-        try:
-            return ser.readline()
-        except Exception:
-            return b""
-
-    while not stop_event.is_set():
-        try:
-            line = await loop.run_in_executor(None, blocking_read)
-            if not line:
-                continue
-
-            text = line.decode("utf-8", errors="ignore").strip()
-
-            data = {
-                "type": "SERIAL_DATA",
-                "payload": {
-                    "ts": now_ts(),
-                    "port": SERIAL_PORT,
-                    "raw": text,
-                },
-            }
-
-            await emit(data)
-
-        except Exception as e:
-            wslog("error", f"SERIAL read error: {e}")
-            await asyncio.sleep(0.2)
-
-    try:
-        ser.close()
-    except Exception:
-        pass
-
-    wslog("info", "SERIAL reader stopped")
 
 
 # --- Unified emit helpers ---
@@ -582,16 +516,14 @@ async def broadcast(msg_json: str):
 
 async def mavlink_reader_loop(stop_event: asyncio.Event):
     """
-    Listen for MAVLink UDP packets and broadcast JSON to websocket clients.
+    Listen for MAVLink messages on serial port and broadcast JSON to websocket clients.
     Also prints GPS + attitude to console when available.
     The loop checks stop_event to exit cleanly on shutdown.
     """
     global last_gps, last_att, last_depth_m, _mav
-    uri = f"udpin:{MAVLINK_BIND}:{MAVLINK_PORT}"
-    print("Starting MAVLink listener at", uri)
+    print("Starting MAVLink listener at", MAVLINK_PORT)
     try:
-        # open a listener (udpin) - stores connection in global _mav for shutdown
-        _mav = mavutil.mavlink_connection(uri, source_system=255)
+        _mav = mavutil.mavlink_connection(MAVLINK_PORT, baud=MAVLINK_BAUD)
     except Exception as e:
         print("Failed to open mavlink connection:", e)
         return
@@ -769,19 +701,26 @@ async def _serve():
     stop_event = asyncio.Event()
 
     _reader_task = asyncio.create_task(mavlink_reader_loop(stop_event))
-    serial_task = asyncio.create_task(serial_reader_loop(stop_event))
 
-    print("Background tasks started (MAVLink + Serial).")
+    print("MAVLink background reader task started.")
 
-    config = uvicorn.Config(app, host=WS_HOST, port=WS_PORT, log_level="info")
+    config = uvicorn.Config(
+        app,
+        host=WS_HOST,
+        port=WS_PORT,
+        ssl_keyfile="/home/amv-onboard/pleco-certs/amv-onboard.tailc2fe55.ts.net.key",
+        ssl_certfile="/home/amv-onboard/pleco-certs/amv-onboard.tailc2fe55.ts.net.crt",
+        log_level="info",
+    )
     server = uvicorn.Server(config)
 
     await server.serve()
 
-    print("Uvicorn stopped; shutting down background tasks.")
+    print("Uvicorn server stopped; signaling reader to stop.")
     stop_event.set()
 
-    await asyncio.gather(_reader_task, serial_task, return_exceptions=True)
+    if _reader_task:
+        await _reader_task
     print("Shutdown complete.")
 
 
