@@ -7,10 +7,12 @@ export function useBathymetry(telemetry) {
   const [hasStarted, setHasStarted] = useState(false);
   const [bathymetryData, setBathymetryData] = useState([]);
   const intervalRef = useRef(null);
-
-  const pos = telemetry?.GLOBAL_POSITION_INT?.payload;
-  const lat = pos?.lat;
-  const lon = pos?.lon;
+  // Keep latest telemetry in a ref so the recording interval reads fresh data
+  // without re-creating itself on every WebSocket tick.
+  const telemetryRef = useRef(telemetry);
+  useEffect(() => {
+    telemetryRef.current = telemetry;
+  }, [telemetry]);
 
   const startRecording = useCallback(() => {
     setIsRecording(true);
@@ -27,28 +29,26 @@ export function useBathymetry(telemetry) {
   }, []);
 
   useEffect(() => {
-    if (isRecording && lat != null && lon != null) {
-      intervalRef.current = setInterval(() => {
-        const posData = telemetry?.GLOBAL_POSITION_INT?.payload;
-        if (posData) {
-          const depth = 0.0;
-          setBathymetryData((prev) => [
-            ...prev,
-            {
-              timestamp: new Date().toISOString(),
-              latitude: posData.lat,
-              longitude: posData.lon,
-              depth,
-            },
-          ]);
-        }
-      }, 1000);
-    } else {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    }
+    if (!isRecording) return;
+
+    intervalRef.current = setInterval(() => {
+      const t = telemetryRef.current;
+      const posData = t?.GLOBAL_POSITION_INT?.payload;
+      const depth =
+        t?.DISTANCE_SENSOR?.payload?.current_distance ??
+        t?.RANGEFINDER?.payload?.distance ??
+        null;
+
+      setBathymetryData((prev) => [
+        ...prev,
+        {
+          timestamp: new Date().toISOString(),
+          latitude: posData?.lat ?? null,
+          longitude: posData?.lon ?? null,
+          depth: depth ?? 0,
+        },
+      ]);
+    }, 1000);
 
     return () => {
       if (intervalRef.current) {
@@ -56,7 +56,7 @@ export function useBathymetry(telemetry) {
         intervalRef.current = null;
       }
     };
-  }, [isRecording, telemetry, lat, lon]);
+  }, [isRecording]);
 
   const downloadCSV = useCallback(() => {
     if (bathymetryData.length === 0) return;
