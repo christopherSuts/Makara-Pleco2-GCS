@@ -26,6 +26,7 @@ latest_messages: Dict[str, Dict[str, Any]] = {}
 last_gps: Optional[Dict[str, float]] = None
 last_att: Optional[Dict[str, float]] = None
 last_rangefinder: Optional[Dict[str, float]] = None
+last_gps_raw: Optional[Dict[str, Any]] = None  # fix_type, satellites_visible, time_usec
 
 # JSON_LOG_FILE = datetime.utcnow().strftime("telemetry-%Y%m%d.ndjson")
 JSON_LOG_FILE = None
@@ -39,6 +40,8 @@ _reader_task: Optional[asyncio.Task] = None
 
 # Last known echosounder depth (meters)
 last_depth_m: Optional[float] = None
+# Last known echosounder depth confidence (0-100 signal_quality, or covariance 0-255)
+last_depth_confidence: Optional[int] = None
 
 
 
@@ -365,13 +368,18 @@ async def handle_get_path_log(ws: WebSocket, payload: dict):
                     # Ensure keys exist before trying to read them
                     if "lat" in point and "lon" in point and "depth_m" in point:
                         # Cast to float to safely handle integers and validate numeric types
-                        path_log.append(
-                            {
-                                "lat": float(point["lat"]),
-                                "lon": float(point["lon"]),
-                                "depth_m": float(point["depth_m"]),
-                            }
-                        )
+                        entry = {
+                            "lat": float(point["lat"]),
+                            "lon": float(point["lon"]),
+                            "depth_m": float(point["depth_m"]),
+                        }
+                        # Forward optional enrichment fields if present
+                        for key in ("ts", "alt_m", "yaw_deg", "pitch_deg", "roll_deg",
+                                    "gps_fix_type", "satellites_visible",
+                                    "depth_confidence"):
+                            if key in point:
+                                entry[key] = point[key]
+                        path_log.append(entry)
                 except (json.JSONDecodeError, ValueError, TypeError):
                     # Skip corrupted lines silently rather than crashing the whole request
                     continue
@@ -406,8 +414,26 @@ def now_ts() -> str:
     return datetime.utcnow().isoformat() + "Z"
 
 
-def append_coord_echo_log(lat: float, lon: float, alt: float, depth_m: Optional[float]):
-    # Append a JSON record to date-based file in path_logs folder
+def append_coord_echo_log(
+    lat: float,
+    lon: float,
+    alt: float,
+    depth_m: Optional[float],
+    yaw_deg: Optional[float] = None,
+    pitch_deg: Optional[float] = None,
+    roll_deg: Optional[float] = None,
+    gps_fix_type: Optional[int] = None,
+    satellites_visible: Optional[int] = None,
+    depth_confidence: Optional[int] = None,
+    gps_time_usec: Optional[int] = None,
+):
+    """Append a JSON record to date-based file in path_logs folder.
+
+    Includes attitude, GPS fix status, and echosounder depth confidence.
+    Timestamp prefers Pixhawk GPS time (time_usec from GPS_RAW_INT) when
+    available and the fix is locked (fix_type >= 3); otherwise falls back
+    to the Jetson system clock.
+    """
     if COORD_ECHO_LOG_FOLDER is None:
         return
     try:
@@ -418,12 +444,28 @@ def append_coord_echo_log(lat: float, lon: float, alt: float, depth_m: Optional[
         date_str = datetime.utcnow().strftime("%Y-%m-%d")
         log_file = os.path.join(COORD_ECHO_LOG_FOLDER, f"{date_str}.txt")
 
+        # Prefer Pixhawk GPS time when fix is locked (>= 3D fix)
+        ts = now_ts()  # fallback: Jetson system clock
+        if gps_time_usec and gps_time_usec > 0 and gps_fix_type is not None and gps_fix_type >= 3:
+            try:
+                from datetime import timezone
+                gps_dt = datetime.fromtimestamp(gps_time_usec / 1e6, tz=timezone.utc)
+                ts = gps_dt.isoformat()
+            except Exception:
+                pass  # keep Jetson fallback
+
         record = {
-            "ts": now_ts(),
+            "ts": ts,
             "lat": lat,
             "lon": lon,
             "alt_m": alt,
             "depth_m": depth_m,
+            "yaw_deg": round(yaw_deg, 2) if yaw_deg is not None else None,
+            "pitch_deg": round(pitch_deg, 2) if pitch_deg is not None else None,
+            "roll_deg": round(roll_deg, 2) if roll_deg is not None else None,
+            "gps_fix_type": gps_fix_type,
+            "satellites_visible": satellites_visible,
+            "depth_confidence": depth_confidence,
         }
         with open(log_file, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
@@ -477,6 +519,18 @@ def to_json_msg(msg) -> Dict[str, Any]:
             }
         elif mtype == "DISTANCE_SENSOR":
             # DISTANCE_SENSOR is the modern message for rangefinders
+            # covariance: 0-255 (255=unknown) from BlueRobotics Ping sonar
+            # signal_quality: 0-100% (available in MAVLink v2 / newer FW)
+            covariance = getattr(msg, "covariance", 255)
+            signal_quality = getattr(msg, "signal_quality", None)
+            # Normalise confidence to 0-100 scale:
+            #   prefer signal_quality if available, else map covariance
+            if signal_quality is not None and signal_quality >= 0:
+                confidence = int(signal_quality)  # already 0-100
+            elif covariance < 255:
+                confidence = max(0, 100 - int(covariance * 100 / 255))
+            else:
+                confidence = None  # unknown
             base["payload"] = {
                 "current_distance": getattr(msg, "current_distance", 0)
                 / 100.0,  # cm to meters
@@ -484,6 +538,9 @@ def to_json_msg(msg) -> Dict[str, Any]:
                 "max_distance": getattr(msg, "max_distance", 0) / 100.0,
                 "type": getattr(msg, "type", 0),
                 "id": getattr(msg, "id", 0),
+                "covariance": covariance,
+                "signal_quality": signal_quality,
+                "confidence": confidence,
             }
         elif mtype == "RANGEFINDER":
             # Legacy RANGEFINDER message (if used)
@@ -520,7 +577,7 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
     Also prints GPS + attitude to console when available.
     The loop checks stop_event to exit cleanly on shutdown.
     """
-    global last_gps, last_att, last_depth_m, _mav
+    global last_gps, last_att, last_depth_m, last_depth_confidence, last_gps_raw, _mav
     print("Starting MAVLink listener at", MAVLINK_PORT)
     try:
         _mav = mavutil.mavlink_connection(MAVLINK_PORT, baud=MAVLINK_BAUD)
@@ -611,12 +668,31 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
                     "alt": p.get("alt"),
                 }
                 if last_gps.get("lat") is not None and last_gps.get("lon") is not None:
-                    # Log GPS with current depth (from RANGEFINDER)
+                    # Compute attitude in degrees for logging
+                    _yaw_deg = None
+                    _pitch_deg = None
+                    _roll_deg = None
+                    if last_att:
+                        _yaw_deg = math.degrees(last_att["yaw"]) if last_att.get("yaw") is not None else None
+                        _pitch_deg = math.degrees(last_att["pitch"]) if last_att.get("pitch") is not None else None
+                        _roll_deg = math.degrees(last_att["roll"]) if last_att.get("roll") is not None else None
+                    # GPS fix info
+                    _fix = last_gps_raw.get("fix_type") if last_gps_raw else None
+                    _sats = last_gps_raw.get("satellites_visible") if last_gps_raw else None
+                    _gps_time = last_gps_raw.get("time_usec") if last_gps_raw else None
+
                     append_coord_echo_log(
                         last_gps.get("lat"),
                         last_gps.get("lon"),
                         last_gps.get("alt"),
                         last_depth_m,
+                        yaw_deg=_yaw_deg,
+                        pitch_deg=_pitch_deg,
+                        roll_deg=_roll_deg,
+                        gps_fix_type=_fix,
+                        satellites_visible=_sats,
+                        depth_confidence=last_depth_confidence,
+                        gps_time_usec=_gps_time,
                     )
             elif j["type"] == "ATTITUDE":
                 p = j["payload"]
@@ -625,6 +701,13 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
                     "pitch": p.get("pitch"),
                     "yaw": p.get("yaw"),
                 }
+            elif j["type"] == "GPS_RAW_INT":
+                p = j["payload"]
+                last_gps_raw = {
+                    "fix_type": p.get("fix_type"),
+                    "satellites_visible": p.get("satellites_visible"),
+                    "time_usec": p.get("time_usec"),
+                }
             elif j["type"] == "DISTANCE_SENSOR":
                 p = j["payload"]
                 last_rangefinder = {
@@ -632,10 +715,12 @@ async def mavlink_reader_loop(stop_event: asyncio.Event):
                     "type": p.get("type"),
                 }
                 last_depth_m = p.get("current_distance")
+                last_depth_confidence = p.get("confidence")
             elif j["type"] == "RANGEFINDER":
                 p = j["payload"]
                 last_rangefinder = {"distance": p.get("distance"), "type": "legacy"}
                 last_depth_m = p.get("distance")
+                last_depth_confidence = None  # legacy message has no confidence
 
             # Print output if we have at least one of them (prints both if both available)
             if last_gps or last_att:

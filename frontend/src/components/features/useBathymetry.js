@@ -31,21 +31,63 @@ export function useBathymetry(telemetry) {
   useEffect(() => {
     if (!isRecording) return;
 
+    const RAD2DEG = 180 / Math.PI;
+
     intervalRef.current = setInterval(() => {
       const t = telemetryRef.current;
       const posData = t?.GLOBAL_POSITION_INT?.payload;
+      const attData = t?.ATTITUDE?.payload;
+      const gpsRaw =
+        t?.GPS_RAW_INT?.payload ?? t?.GPS2_RAW?.payload ?? null;
+      const distSensor = t?.DISTANCE_SENSOR?.payload;
+      const rangefinder = t?.RANGEFINDER?.payload;
+
       const depth =
-        t?.DISTANCE_SENSOR?.payload?.current_distance ??
-        t?.RANGEFINDER?.payload?.distance ??
-        null;
+        distSensor?.current_distance ?? rangefinder?.distance ?? null;
+
+      // Depth confidence: normalised 0-100 from DISTANCE_SENSOR
+      const depthConfidence = distSensor?.confidence ?? null;
+
+      // GPS fix status
+      const gpsFixType = gpsRaw?.fix_type ?? null;
+      const satellitesVisible = gpsRaw?.satellites_visible ?? null;
+
+      // Attitude in degrees
+      const yaw =
+        attData?.yaw != null ? attData.yaw * RAD2DEG : null;
+      const pitch =
+        attData?.pitch != null ? attData.pitch * RAD2DEG : null;
+      const roll =
+        attData?.roll != null ? attData.roll * RAD2DEG : null;
+
+      // Timestamp: prefer Pixhawk GPS UTC when fix is locked (>= 3D)
+      let timestamp;
+      const gpsTimeUsec = gpsRaw?.time_usec;
+      if (
+        gpsTimeUsec &&
+        gpsTimeUsec > 0 &&
+        gpsFixType != null &&
+        gpsFixType >= 3
+      ) {
+        timestamp = new Date(gpsTimeUsec / 1000).toISOString(); // usec → ms
+      } else {
+        timestamp = new Date().toISOString(); // Jetson / browser fallback
+      }
 
       setBathymetryData((prev) => [
         ...prev,
         {
-          timestamp: new Date().toISOString(),
+          timestamp,
           latitude: posData?.lat ?? null,
           longitude: posData?.lon ?? null,
+          altitude: posData?.alt ?? null,
           depth: depth ?? 0,
+          yaw: yaw != null ? +yaw.toFixed(2) : null,
+          pitch: pitch != null ? +pitch.toFixed(2) : null,
+          roll: roll != null ? +roll.toFixed(2) : null,
+          gps_fix_type: gpsFixType,
+          satellites: satellitesVisible,
+          depth_confidence: depthConfidence,
         },
       ]);
     }, 1000);
@@ -61,9 +103,13 @@ export function useBathymetry(telemetry) {
   const downloadCSV = useCallback(() => {
     if (bathymetryData.length === 0) return;
 
-    const header = "timestamp,latitude,longitude,depth\n";
+    const header =
+      "timestamp,latitude,longitude,altitude,depth,yaw,pitch,roll,gps_fix_type,satellites,depth_confidence\n";
     const rows = bathymetryData
-      .map((d) => `${d.timestamp},${d.latitude},${d.longitude},${d.depth}`)
+      .map(
+        (d) =>
+          `${d.timestamp},${d.latitude},${d.longitude},${d.altitude},${d.depth},${d.yaw},${d.pitch},${d.roll},${d.gps_fix_type},${d.satellites},${d.depth_confidence}`
+      )
       .join("\n");
     const csv = header + rows;
 
