@@ -2,6 +2,7 @@
 import asyncio, math
 import json
 import functools
+import glob
 from datetime import datetime
 from typing import Dict, Any, Set, Optional
 
@@ -14,6 +15,11 @@ from pymavlink import mavutil
 
 # CONFIG — single source of truth
 SERIAL_DEVICE = "/dev/ttyACM0"
+# Fallback glob patterns used to (re)detect the FCU if it re-enumerates under a
+# different path after a USB replug (e.g. /dev/ttyACM1). The configured
+# SERIAL_DEVICE above is always preferred when present.
+SERIAL_DEVICE_GLOBS = ["/dev/ttyACM*", "/dev/ttyUSB*"]
+SERIAL_WATCH_INTERVAL = 2.0          # seconds between USB/serial presence checks
 SERIAL_BAUD = 115200
 MAVROUTER_UDP_PORT = 14550           # mavlink-routerd → middleware (UDP)
 MAVROUTER_TCP_PORT = 5760            # mavlink-routerd → MissionPlanner (TCP)
@@ -46,6 +52,8 @@ _mav = None
 _reader_task: Optional[asyncio.Task] = None
 _mavrouter_proc: Optional[asyncio.subprocess.Process] = None
 _mavrouter_log_fh = None
+# Path of the serial device mavlink-routerd is currently bound to (None = link down)
+_current_serial_device: Optional[str] = None
 
 # Last known echosounder depth (meters)
 last_depth_m: Optional[float] = None
@@ -584,7 +592,23 @@ async def broadcast(msg_json: str):
 #  mavlink-routerd subprocess management
 # ---------------------------------------------------------------------------
 
-def generate_mavrouter_config():
+def find_serial_device() -> Optional[str]:
+    """Return a currently-present FCU serial device path, or None.
+
+    Prefers the configured SERIAL_DEVICE; otherwise falls back to the first
+    match of SERIAL_DEVICE_GLOBS so a USB replug that re-enumerates the FCU
+    under a different node (e.g. /dev/ttyACM1) is still picked up.
+    """
+    if os.path.exists(SERIAL_DEVICE):
+        return SERIAL_DEVICE
+    for pattern in SERIAL_DEVICE_GLOBS:
+        matches = sorted(glob.glob(pattern))
+        if matches:
+            return matches[0]
+    return None
+
+
+def generate_mavrouter_config(device: str = SERIAL_DEVICE):
     """Generate a mavlink-routerd configuration file from centralized constants."""
     config = (
         "[General]\n"
@@ -593,7 +617,7 @@ def generate_mavrouter_config():
         "MavlinkDialect=ardupilotmega\n"
         "\n"
         "[UartEndpoint serial]\n"
-        f"Device={SERIAL_DEVICE}\n"
+        f"Device={device}\n"
         f"Baud={SERIAL_BAUD}\n"
         "\n"
         "[UdpEndpoint middleware]\n"
@@ -603,13 +627,13 @@ def generate_mavrouter_config():
     )
     with open(MAVROUTER_CONF_PATH, "w") as f:
         f.write(config)
-    print(f"Generated mavlink-routerd config at {MAVROUTER_CONF_PATH}")
+    print(f"Generated mavlink-routerd config at {MAVROUTER_CONF_PATH} (device={device})")
 
 
 async def start_mavlink_router():
     """Start mavlink-routerd as a managed subprocess."""
     global _mavrouter_proc, _mavrouter_log_fh
-    _mavrouter_log_fh = open(MAVROUTER_LOG_PATH, "w")
+    _mavrouter_log_fh = open(MAVROUTER_LOG_PATH, "a")
     _mavrouter_proc = await asyncio.create_subprocess_exec(
         "mavlink-routerd", "-c", MAVROUTER_CONF_PATH,
         stdout=_mavrouter_log_fh,
@@ -637,6 +661,71 @@ async def stop_mavlink_router():
     if _mavrouter_log_fh is not None:
         _mavrouter_log_fh.close()
         _mavrouter_log_fh = None
+
+
+async def serial_watchdog_loop(stop_event: asyncio.Event):
+    """Continuously (re)detect the FCU serial device and keep mavlink-routerd
+    bound to it — making the link survive a USB unplug/replug without having to
+    restart the middleware.
+
+    Behaviour each tick:
+      1. If mavlink-routerd died on its own, reap it so it can be restarted.
+      2. If the device mavlink-routerd is using has vanished (USB unplugged),
+         stop mavlink-routerd and free its handle.
+      3. If there is no active device, try to (re)detect one — even under a new
+         path like /dev/ttyACM1 — and (re)start mavlink-routerd against it.
+
+    The middleware's UDP reader and the WebSocket servers keep running through
+    all of this; only the serial owner (mavlink-routerd) is cycled.
+    """
+    global _current_serial_device
+    while not stop_event.is_set():
+        try:
+            # 1. mavlink-routerd exited unexpectedly → reap and force re-detect.
+            if (
+                _mavrouter_proc is not None
+                and _mavrouter_proc.returncode is not None
+            ):
+                wslog(
+                    "warn",
+                    f"mavlink-routerd exited unexpectedly (code {_mavrouter_proc.returncode}) — will restart",
+                )
+                print(
+                    f"[WATCHDOG] mavlink-routerd exited (code {_mavrouter_proc.returncode})."
+                )
+                await stop_mavlink_router()
+                _current_serial_device = None
+
+            # 2. Active device disappeared (USB unplugged).
+            if _current_serial_device and not os.path.exists(_current_serial_device):
+                wslog(
+                    "warn",
+                    f"FCU serial device {_current_serial_device} disconnected — stopping mavlink-routerd",
+                )
+                print(f"[WATCHDOG] Serial device {_current_serial_device} lost.")
+                await stop_mavlink_router()
+                _current_serial_device = None
+
+            # 3. No active device → try to (re)detect and bring the link up.
+            if _current_serial_device is None:
+                device = find_serial_device()
+                if device:
+                    wslog(
+                        "info",
+                        f"FCU serial device {device} detected — starting mavlink-routerd",
+                    )
+                    print(f"[WATCHDOG] Serial device {device} detected; starting mavlink-routerd.")
+                    generate_mavrouter_config(device)
+                    await start_mavlink_router()
+                    _current_serial_device = device
+        except Exception as e:
+            print("[WATCHDOG] error:", repr(e))
+            wslog("error", f"Serial watchdog error: {e}")
+
+        await asyncio.sleep(SERIAL_WATCH_INTERVAL)
+
+    # On shutdown, ensure the serial owner is stopped.
+    await stop_mavlink_router()
 
 
 async def mavlink_reader_loop(stop_event: asyncio.Event):
@@ -854,17 +943,21 @@ async def _serve():
     global _reader_task
     stop_event = asyncio.Event()
 
-    # --- 1. Pre-flight check: serial device ---
-    if not os.path.exists(SERIAL_DEVICE):
-        print(f"ERROR: Serial device {SERIAL_DEVICE} not found. Aborting.")
-        return
+    # --- 1. Serial-device watchdog ---
+    # No hard pre-flight abort: the watchdog brings mavlink-routerd up as soon
+    # as the FCU is present and cycles it on USB unplug/replug, so the
+    # middleware can start before the Pixhawk is plugged in and recover on its
+    # own afterwards.
+    if not find_serial_device():
+        print(
+            f"WARNING: No FCU serial device found yet (looked for {SERIAL_DEVICE} and "
+            f"{SERIAL_DEVICE_GLOBS}). Watchdog will start mavlink-routerd once one appears."
+        )
+    watchdog_task = asyncio.create_task(serial_watchdog_loop(stop_event))
+    print("Serial watchdog task started.")
+    await asyncio.sleep(2.0)  # give the watchdog a chance to grab the serial port
 
-    # --- 2. Generate mavlink-routerd config and start it ---
-    generate_mavrouter_config()
-    await start_mavlink_router()
-    await asyncio.sleep(1.5)  # allow mavlink-routerd to grab the serial port
-
-    # --- 3. Start MAVLink reader (reads from UDP, not serial) ---
+    # --- 2. Start MAVLink reader (reads from UDP, not serial) ---
     _reader_task = asyncio.create_task(mavlink_reader_loop(stop_event))
     print("MAVLink background reader task started.")
 
@@ -907,6 +1000,11 @@ async def _serve():
                 await _reader_task
             except asyncio.CancelledError:
                 pass
+        watchdog_task.cancel()
+        try:
+            await watchdog_task
+        except asyncio.CancelledError:
+            pass
         await stop_mavlink_router()
         print("Shutdown complete.")
 

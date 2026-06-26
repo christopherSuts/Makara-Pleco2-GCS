@@ -49,7 +49,6 @@ export default function LogPanel({ telemetry, isBackendConnected, className = ""
       <div className="flex-1 min-h-0 flex flex-col">
         <div className="flex justify-center items-center gap-2 mb-1 shrink-0 relative">
              <div className="text-xs font-bold text-amv-white uppercase tracking-wider">ArduPilot Messages</div>
-             <div className={`w-2 h-2 rounded-full ${isBackendConnected ? "bg-emerald-500 shadow-[0_0_8px_#10b981]" : "bg-red-500/50"}`} title={isBackendConnected ? "Telemetry Live" : "No Signal"}></div>
         </div>
         <div className={"rounded-xl border border-white/5 bg-amv-black/30 p-1.5 flex-1 overflow-auto min-h-0" + (isBackendConnected ? " opacity-100" : " opacity-40 grayscale pointer-events-none")}>
           <pre className="m-0 text-[11px] leading-5 font-mono tabular-nums whitespace-pre-wrap">
@@ -69,7 +68,10 @@ export default function LogPanel({ telemetry, isBackendConnected, className = ""
 
       {/* WebSocket / Backend */}
       <div className="flex-1 min-h-0 flex flex-col">
-         <div className="text-xs font-bold text-center text-amv-white uppercase tracking-wider mb-1 shrink-0">WebSocket / Backend</div>
+         <div className="flex justify-center items-center gap-2 mb-1 shrink-0 relative">
+             <div className="text-xs font-bold text-amv-white uppercase tracking-wider">WebSocket</div>
+             <div className={`w-2 h-2 rounded-full ${isBackendConnected ? "bg-emerald-500 shadow-[0_0_8px_#10b981]" : "bg-red-500/50"}`} title={isBackendConnected ? "Telemetry Live" : "No Signal"}></div>
+        </div>
          <div className={"rounded-xl border border-white/5 bg-amv-black/30 p-1.5 flex-1 overflow-auto min-h-0" + (isBackendConnected ? " opacity-100" : " opacity-40 grayscale pointer-events-none")}>
           <pre className="m-0 text-[11px] leading-5 font-mono tabular-nums whitespace-pre-wrap">
             {ws.map((l, i) => (

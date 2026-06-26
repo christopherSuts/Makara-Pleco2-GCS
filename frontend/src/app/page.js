@@ -156,8 +156,6 @@ export default function HomePage() {
         console.log("Setting Mode: RTL");
         send({ type: "SET_MODE", payload: { mode: "RTL" } });
     };
-    const handleConnect = () => { console.log("Connect"); toast.info("Connect Clicked"); };
-    const handleCloud = () => { console.log("Cloud"); toast.info("Cloud Clicked"); };
 
     // Path log handlers
     const handleGetPathLogList = () => {
@@ -497,8 +495,6 @@ export default function HomePage() {
                             onManual={handleManual}
                             onAuto={handleAuto}
                             onRTL={handleRTL}
-                            onConnect={handleConnect}
-                            onCloud={handleCloud}
                             onSendWP={sendMissionOverWS}
                             hasPath={path.hasPath}
                         />

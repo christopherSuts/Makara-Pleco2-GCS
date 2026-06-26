@@ -54,6 +54,16 @@ export default function StatusPanel({
   telemetry,
   isBackendConnected,
 }) {
+  // Force a periodic re-render so the heartbeat-freshness check (and the
+  // live/red indicator) stays current even when telemetry STOPS arriving
+  // (e.g. USB unplugged). Without this, the component only re-renders on new
+  // telemetry, so the indicator would stay green until a manual page refresh.
+  const [, setTick] = React.useState(0);
+  React.useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
   // 1. Connection Health (based on HEARTBEAT + WebSocket)
   const hb = telemetry?.HEARTBEAT;
   const lastHeartbeat = hb?.server_ts ? new Date(hb.server_ts).getTime() : 0;
@@ -122,7 +132,7 @@ export default function StatusPanel({
   return (
     <div className="bg-amv-grey/90 border border-white/10 rounded-2xl p-3 shadow-xl h-full flex flex-col gap-1 overflow-auto backdrop-blur-md">
       <div className="flex items-center justify-center gap-2 mb-1 shrink-0">
-        <h3 className="text-sm font-bold text-amv-white uppercase tracking-wider">Status</h3>
+        <h3 className="text-sm font-bold text-amv-white uppercase tracking-wider">ArduPilot Status</h3>
         {/* Telemetry Indicator */}
         <div className={`w-2 h-2 rounded-full ${isConnected ? "bg-emerald-500 shadow-[0_0_8px_#10b981]" : "bg-red-500/50"}`} title={isConnected ? "Telemetry Live" : "No Signal"}></div>
       </div>

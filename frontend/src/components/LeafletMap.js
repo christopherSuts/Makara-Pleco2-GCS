@@ -2,7 +2,7 @@
 
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -14,23 +14,33 @@ import {
   useMapEvents,
 } from "react-leaflet";
 
-const homeIcon = L.icon({
-  iconUrl: "/mapMarker/home-icon.png",  
-  iconSize: [36, 36],
-  iconAnchor: [18, 18],
-});
+// Base icon definitions (size/anchor at the reference zoom). The actual
+// rendered size is scaled by the current zoom level so the markers don't
+// cover the whole map when zoomed out, nor become oversized when zoomed in.
+const ICON_DEFS = {
+  home: { url: "/mapMarker/home-icon.png", size: [36, 36], anchor: [18, 18] },
+  asv: { url: "/mapMarker/asv-icon.png", size: [50, 60], anchor: [25, 30] },
+  operator: { url: "/mapMarker/operator-icon.png", size: [45, 70], anchor: [22, 35] },
+};
 
-const asvIcon = L.icon({
-  iconUrl: "/mapMarker/asv-icon.png",
-  iconSize: [50, 60],   
-  iconAnchor: [15, 15], 
-});
+const REFERENCE_ZOOM = 16; // zoom level at which icons render at their base size
+const MIN_ICON_SCALE = 0.45; // floor so markers stay visible when zoomed far out
+const MAX_ICON_SCALE = 1.15; // ceiling so markers don't get oversized when zoomed in
 
-const operatorIcon = L.icon({
-  iconUrl: "/mapMarker/operator-icon.png",
-  iconSize: [45, 70],   
-  iconAnchor: [15, 15], 
-});
+/** Map a zoom level to an icon scale factor, gently growing/shrinking with zoom. */
+function zoomToScale(zoom) {
+  const scale = Math.pow(1.35, zoom - REFERENCE_ZOOM);
+  return Math.max(MIN_ICON_SCALE, Math.min(MAX_ICON_SCALE, scale));
+}
+
+/** Build a Leaflet icon for the given definition at the given scale. */
+function buildScaledIcon(def, scale) {
+  return L.icon({
+    iconUrl: def.url,
+    iconSize: [def.size[0] * scale, def.size[1] * scale],
+    iconAnchor: [def.anchor[0] * scale, def.anchor[1] * scale],
+  });
+}
 
 const customIcon = L.icon({
   iconUrl: "/mapMarker/marker-icon.png",
@@ -44,14 +54,14 @@ const customIcon = L.icon({
 const DEFAULT_COORDS = { lat: -6.144353601068162, lng: 106.88533858899994 };
 const zoomSize = 16;
 
-function AsvMarker({ parsedAsvPosition }) {
+function AsvMarker({ parsedAsvPosition, icon }) {
   // Don't render if we don't have a valid, parsed position
   if (!parsedAsvPosition) {
     return null;
   }
 
   return (
-    <Marker position={parsedAsvPosition} icon={asvIcon}>
+    <Marker position={parsedAsvPosition} icon={icon}>
       <Popup>
         <b>ASV Location</b>
         <br />
@@ -63,14 +73,14 @@ function AsvMarker({ parsedAsvPosition }) {
   );
 }
 
-function GcsMarker({ gcsPosition }) {
+function GcsMarker({ gcsPosition, icon }) {
   // gcsPosition is passed from page.js and is [lat, lng] or null
   if (!gcsPosition) {
     return null;
   }
 
   return (
-    <Marker position={gcsPosition} icon={operatorIcon}>
+    <Marker position={gcsPosition} icon={icon}>
       <Popup>
         <b>GCS Location</b>
         <br />
@@ -165,6 +175,23 @@ function MissionPathFocusController({ missionPath }) {
   return null;
 }
 
+/** Tracks the map zoom level and reports it up so marker icons can be scaled. */
+function ZoomWatcher({ onZoom }) {
+  const map = useMap();
+
+  useEffect(() => {
+    onZoom(map.getZoom());
+  }, [map, onZoom]);
+
+  useMapEvents({
+    zoomend() {
+      onZoom(map.getZoom());
+    },
+  });
+
+  return null;
+}
+
 function MouseCoordinates() {
   const [position, setPosition] = useState({ lat: null, lng: null });
 
@@ -247,6 +274,14 @@ export default function LeafletMap({
 }) {
   const [userCoords, setUserCoords] = useState(DEFAULT_COORDS);
   const [parsedAsvPosition, setParsedAsvPosition] = useState(null);
+  const [zoom, setZoom] = useState(zoomSize);
+
+  // Rebuild marker icons whenever the zoom level changes so they scale
+  // with the map instead of staying a fixed pixel size.
+  const scale = zoomToScale(zoom);
+  const asvIcon = useMemo(() => buildScaledIcon(ICON_DEFS.asv, scale), [scale]);
+  const operatorIcon = useMemo(() => buildScaledIcon(ICON_DEFS.operator, scale), [scale]);
+  const homeIcon = useMemo(() => buildScaledIcon(ICON_DEFS.home, scale), [scale]);
 
   useEffect(() => {
     if (asvPosition && asvPosition.payload) {
@@ -268,15 +303,21 @@ export default function LeafletMap({
       <MapContainer
         center={DEFAULT_COORDS}
         zoom={zoomSize}
+        maxZoom={22}
         style={{ height: "100%", width: "100%", zIndex: 0 }}
         zoomControl={false}
       >
-        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+        <TileLayer
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          maxZoom={22}
+          maxNativeZoom={19}
+        />
 
-        <GcsLocationProvider 
+        <GcsLocationProvider
           onLocationUpdate={setGcsPosition}
           centerMode={centerMode}
         />
+        <ZoomWatcher onZoom={setZoom} />
         <MouseCoordinates />
 
         <AsvCenteringController
@@ -285,8 +326,8 @@ export default function LeafletMap({
         />
         <MissionPathFocusController missionPath={missionPath} />
 
-        <AsvMarker parsedAsvPosition={parsedAsvPosition} />
-        <GcsMarker gcsPosition={gcsPosition} />
+        <AsvMarker parsedAsvPosition={parsedAsvPosition} icon={asvIcon} />
+        <GcsMarker gcsPosition={gcsPosition} icon={operatorIcon} />
 
         {/* Default position marker */}
         <Marker position={[userCoords.lat, userCoords.lng]} icon={customIcon}>
