@@ -2,6 +2,7 @@
 frontend/logs/
 frontend/node_modules/
 frontend/.next/
+frontend/dist-electron/
 old_backend/
 backend/__pycache__/
 backend/path_logs/

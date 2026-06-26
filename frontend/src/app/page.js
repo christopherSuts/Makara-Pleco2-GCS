@@ -18,6 +18,7 @@ import { usePath } from "@/components/features/usePath";
 import { useState } from "react";
 import MapWrapper from "../components/MapWrapper";
 import CenterModeToggle from "@/components/CenterModeToggle";
+import ConnectionModeSelector from "@/components/ConnectionModeSelector";
 import { useTelemetry } from "@/components/features/useTelemetry";
 import { useBathymetry } from "@/components/features/useBathymetry";
 import { pathToMissionItems } from "@/lib/missionWP";
@@ -77,7 +78,7 @@ function estimateBatteryNeededMah(pathLengthMeters) {
 }
 
 export default function HomePage() {
-    const { telemetry, isConnected, send } = useTelemetry();
+    const { telemetry, isConnected, connectionMode, send } = useTelemetry();
     const bathymetry = useBathymetry(telemetry);
     const asvPosition = telemetry.GLOBAL_POSITION_INT;
     const perimeter = usePerimeter(asvPosition);
@@ -456,6 +457,11 @@ export default function HomePage() {
                         }
                     />
                 </aside>
+
+                {/* Connection Mode Selector — top right above panels */}
+                <div className="absolute top-3 right-[475px] pointer-events-auto z-20">
+                    <ConnectionModeSelector isConnected={isConnected} connectionMode={connectionMode} />
+                </div>
 
 
                 {/* Right Area Grid Layout */}

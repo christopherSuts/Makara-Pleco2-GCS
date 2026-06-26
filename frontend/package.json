@@ -2,29 +2,32 @@
   "name": "pleco_gcs",
   "version": "0.1.0",
   "private": true,
+  "main": "electron/main.js",
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "electron:dev": "next build && electron .",
+    "electron:build": "next build && electron-builder"
   },
   "dependencies": {
     "@turf/turf": "^7.3.4",
     "geodesy": "^2.4.0",
     "leaflet": "^1.9.4",
     "next": "15.5.9",
-    "node-mavlink": "^2.3.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-leaflet": "^5.0.0",
     "react-split": "^2.0.14",
     "react-toastify": "^11.0.5",
-    "three": "^0.183.0",
-    "ws": "^8.18.3"
+    "three": "^0.183.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@tailwindcss/postcss": "^4",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0",
     "eslint": "^9",
     "eslint-config-next": "15.3.0",
     "tailwindcss": "^4"

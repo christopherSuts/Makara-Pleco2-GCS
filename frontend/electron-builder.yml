@@ -1,0 +1,23 @@
+appId: com.makara.pleco2gcs
+productName: Pleco2 GCS
+copyright: Copyright © 2026 Makara Pleco
+
+directories:
+  output: dist-electron
+
+files:
+  - electron/**/*
+  - out/**/*
+
+win:
+  target: nsis
+  icon: electron/icon.png
+
+nsis:
+  oneClick: true
+  perMachine: false
+
+linux:
+  target: AppImage
+  icon: electron/icon.png
+  category: Utility

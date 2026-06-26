@@ -1,7 +1,7 @@
 # main.py
 import asyncio, math
 import json
-import functools  # <--- CHANGED
+import functools
 from datetime import datetime
 from typing import Dict, Any, Set, Optional
 
@@ -12,11 +12,18 @@ import uvicorn
 
 from pymavlink import mavutil
 
-# CONFIG
-MAVLINK_PORT = "/dev/ttyACM0"
-MAVLINK_BAUD = 115200
+# CONFIG — single source of truth
+SERIAL_DEVICE = "/dev/ttyACM0"
+SERIAL_BAUD = 115200
+MAVROUTER_UDP_PORT = 14550           # mavlink-routerd → middleware (UDP)
+MAVROUTER_TCP_PORT = 5760            # mavlink-routerd → MissionPlanner (TCP)
 WS_HOST = "0.0.0.0"
-WS_PORT = 9000
+WS_PORT_SSL = 9000                   # Hybrid mode  (wss://)
+WS_PORT_PLAIN = 9001                 # Full-Offline mode (ws://)
+SSL_CERT = "/home/amv-onboard/pleco-certs/amv-onboard.tailc2fe55.ts.net.crt"
+SSL_KEY = "/home/amv-onboard/pleco-certs/amv-onboard.tailc2fe55.ts.net.key"
+MAVROUTER_CONF_PATH = "/tmp/mavlink-routerd.conf"
+MAVROUTER_LOG_PATH = "/tmp/mavlink-routerd.log"
 
 app = FastAPI()
 clients: Set[WebSocket] = set()
@@ -37,6 +44,8 @@ COORD_ECHO_LOG_FOLDER = "path_logs"
 # Global handles so we can close them on shutdown
 _mav = None
 _reader_task: Optional[asyncio.Task] = None
+_mavrouter_proc: Optional[asyncio.subprocess.Process] = None
+_mavrouter_log_fh = None
 
 # Last known echosounder depth (meters)
 last_depth_m: Optional[float] = None
@@ -571,16 +580,76 @@ async def broadcast(msg_json: str):
         clients.discard(ws)
 
 
+# ---------------------------------------------------------------------------
+#  mavlink-routerd subprocess management
+# ---------------------------------------------------------------------------
+
+def generate_mavrouter_config():
+    """Generate a mavlink-routerd configuration file from centralized constants."""
+    config = (
+        "[General]\n"
+        f"TcpServerPort={MAVROUTER_TCP_PORT}\n"
+        "ReportStats=false\n"
+        "MavlinkDialect=ardupilotmega\n"
+        "\n"
+        "[UartEndpoint serial]\n"
+        f"Device={SERIAL_DEVICE}\n"
+        f"Baud={SERIAL_BAUD}\n"
+        "\n"
+        "[UdpEndpoint middleware]\n"
+        "Mode=Normal\n"
+        "Address=127.0.0.1\n"
+        f"Port={MAVROUTER_UDP_PORT}\n"
+    )
+    with open(MAVROUTER_CONF_PATH, "w") as f:
+        f.write(config)
+    print(f"Generated mavlink-routerd config at {MAVROUTER_CONF_PATH}")
+
+
+async def start_mavlink_router():
+    """Start mavlink-routerd as a managed subprocess."""
+    global _mavrouter_proc, _mavrouter_log_fh
+    _mavrouter_log_fh = open(MAVROUTER_LOG_PATH, "w")
+    _mavrouter_proc = await asyncio.create_subprocess_exec(
+        "mavlink-routerd", "-c", MAVROUTER_CONF_PATH,
+        stdout=_mavrouter_log_fh,
+        stderr=asyncio.subprocess.STDOUT,
+    )
+    print(f"mavlink-routerd started (PID {_mavrouter_proc.pid})")
+
+
+async def stop_mavlink_router():
+    """Stop mavlink-routerd gracefully, then force-kill if needed."""
+    global _mavrouter_proc, _mavrouter_log_fh
+    if _mavrouter_proc is not None:
+        try:
+            _mavrouter_proc.terminate()
+            try:
+                await asyncio.wait_for(_mavrouter_proc.wait(), timeout=5)
+                print(f"mavlink-routerd (PID {_mavrouter_proc.pid}) terminated.")
+            except asyncio.TimeoutError:
+                _mavrouter_proc.kill()
+                await _mavrouter_proc.wait()
+                print(f"mavlink-routerd (PID {_mavrouter_proc.pid}) killed after timeout.")
+        except ProcessLookupError:
+            pass
+        _mavrouter_proc = None
+    if _mavrouter_log_fh is not None:
+        _mavrouter_log_fh.close()
+        _mavrouter_log_fh = None
+
+
 async def mavlink_reader_loop(stop_event: asyncio.Event):
     """
-    Listen for MAVLink messages on serial port and broadcast JSON to websocket clients.
-    Also prints GPS + attitude to console when available.
+    Listen for MAVLink messages via UDP (from mavlink-routerd) and broadcast
+    JSON to websocket clients.  Also prints GPS + attitude to console.
     The loop checks stop_event to exit cleanly on shutdown.
     """
     global last_gps, last_att, last_depth_m, last_depth_confidence, last_gps_raw, _mav
-    print("Starting MAVLink listener at", MAVLINK_PORT)
+    udp_uri = f"udpin:127.0.0.1:{MAVROUTER_UDP_PORT}"
+    print(f"Starting MAVLink listener at {udp_uri}")
     try:
-        _mav = mavutil.mavlink_connection(MAVLINK_PORT, baud=MAVLINK_BAUD)
+        _mav = mavutil.mavlink_connection(udp_uri)
     except Exception as e:
         print("Failed to open mavlink connection:", e)
         return
@@ -785,28 +854,61 @@ async def _serve():
     global _reader_task
     stop_event = asyncio.Event()
 
-    _reader_task = asyncio.create_task(mavlink_reader_loop(stop_event))
+    # --- 1. Pre-flight check: serial device ---
+    if not os.path.exists(SERIAL_DEVICE):
+        print(f"ERROR: Serial device {SERIAL_DEVICE} not found. Aborting.")
+        return
 
+    # --- 2. Generate mavlink-routerd config and start it ---
+    generate_mavrouter_config()
+    await start_mavlink_router()
+    await asyncio.sleep(1.5)  # allow mavlink-routerd to grab the serial port
+
+    # --- 3. Start MAVLink reader (reads from UDP, not serial) ---
+    _reader_task = asyncio.create_task(mavlink_reader_loop(stop_event))
     print("MAVLink background reader task started.")
 
-    config = uvicorn.Config(
+    # --- 4. Build Uvicorn server list ---
+    servers = []
+
+    # SSL server — Hybrid mode (wss://)
+    if os.path.exists(SSL_CERT) and os.path.exists(SSL_KEY):
+        ssl_cfg = uvicorn.Config(
+            app,
+            host=WS_HOST,
+            port=WS_PORT_SSL,
+            ssl_keyfile=SSL_KEY,
+            ssl_certfile=SSL_CERT,
+            log_level="info",
+        )
+        servers.append(uvicorn.Server(ssl_cfg))
+    else:
+        print(f"WARNING: SSL certs not found — skipping Hybrid port {WS_PORT_SSL}")
+
+    # Plain server — Full-Offline mode (ws://)
+    plain_cfg = uvicorn.Config(
         app,
         host=WS_HOST,
-        port=WS_PORT,
-        ssl_keyfile="/home/amv-onboard/pleco-certs/amv-onboard.tailc2fe55.ts.net.key",
-        ssl_certfile="/home/amv-onboard/pleco-certs/amv-onboard.tailc2fe55.ts.net.crt",
+        port=WS_PORT_PLAIN,
         log_level="info",
     )
-    server = uvicorn.Server(config)
+    servers.append(uvicorn.Server(plain_cfg))
 
-    await server.serve()
-
-    print("Uvicorn server stopped; signaling reader to stop.")
-    stop_event.set()
-
-    if _reader_task:
-        await _reader_task
-    print("Shutdown complete.")
+    # --- 5. Run all servers ---
+    try:
+        await asyncio.gather(*(s.serve() for s in servers))
+    finally:
+        # --- 6. Cleanup ---
+        print("Uvicorn servers stopped; cleaning up…")
+        stop_event.set()
+        if _reader_task:
+            _reader_task.cancel()
+            try:
+                await _reader_task
+            except asyncio.CancelledError:
+                pass
+        await stop_mavlink_router()
+        print("Shutdown complete.")
 
 
 def main():
@@ -817,9 +919,7 @@ def main():
     try:
         asyncio.run(_serve())
     except KeyboardInterrupt:
-        # Ctrl+C pressed — asyncio.run will raise KeyboardInterrupt; ensure cleanup
         print("\nKeyboardInterrupt received — shutting down.")
-        # If more forced cleanup is needed it can be added here.
     except Exception as e:
         print("Unhandled exception in main():", repr(e))
 

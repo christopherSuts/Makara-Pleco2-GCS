@@ -1,23 +1,34 @@
 // components/features/useTelemetry.js
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { toast } from "react-toastify";
+import { getWsUrl, getMode } from "@/lib/connectionConfig";
 
-// Your WebSocket server URL
-// const WS_PRIMARY = "wss://10.10.10.3:9000/ws";
-// const WS_FALLBACK = "wss://100.117.19.50:9000/ws";
-const WS_URL = "wss://amv-onboard.tailc2fe55.ts.net:9000/ws";
 const RECONNECT_DELAY = 3000; // 3 seconds
 
 export function useTelemetry() {
   const [telemetry, setTelemetry] = useState({});
   const [isConnected, setIsConnected] = useState(false);
+  const [connectionMode, setConnectionMode] = useState("hybrid");
   const wsRef = useRef(null);
   const reconnectTimer = useRef(null);
 
+  // Stable connect function stored in a ref so the mode-change listener
+  // can call the latest version without stale closures.
+  const connectRef = useRef(null);
+
   useEffect(() => {
-    const connect = (url = WS_URL) => {
+    const connect = () => {
+      // Close any existing socket first
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.close();
+      }
+
+      const mode = getMode();
+      setConnectionMode(mode);
+      const url = getWsUrl(mode);
       const ws = new WebSocket(url);
       wsRef.current = ws;
 
@@ -52,14 +63,24 @@ export function useTelemetry() {
       ws.onclose = () => {
         setIsConnected(false);
         clearTimeout(reconnectTimer.current);
-        reconnectTimer.current = setTimeout(connect, 3000);
+        reconnectTimer.current = setTimeout(connect, RECONNECT_DELAY);
       };
 
       ws.onerror = (err) => console.error("WS error", err);
     };
 
+    connectRef.current = connect;
+
+    // Listen for mode changes from ConnectionModeSelector
+    const onModeChanged = () => {
+      clearTimeout(reconnectTimer.current);
+      connect();
+    };
+    window.addEventListener("connection-mode-changed", onModeChanged);
+
     connect();
     return () => {
+      window.removeEventListener("connection-mode-changed", onModeChanged);
       clearTimeout(reconnectTimer.current);
       if (wsRef.current) {
         wsRef.current.onclose = null;
@@ -79,5 +100,5 @@ export function useTelemetry() {
     }
   };
 
-  return { telemetry, isConnected, send };
+  return { telemetry, isConnected, connectionMode, send };
 }
