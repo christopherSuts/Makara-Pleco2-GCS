@@ -36,7 +36,8 @@ async function detectTailscaleRoute(settings) {
  * Connection mode selector — Hybrid (wss:// via Tailscale) vs Full-Offline
  * (ws:// direct LAN).  Persists selection to localStorage.
  */
-export default function ConnectionModeSelector({ isConnected, connectionMode }) {
+export default function ConnectionModeSelector({ isConnected, connectionStatus = "connected", connectionMode }) {
+  const isChecking = connectionStatus === "connecting" && !isConnected;
   const [open, setOpen] = useState(false);
   const [mode, setLocalMode] = useState("hybrid");
   const [testing, setTesting] = useState(false);
@@ -109,16 +110,18 @@ export default function ConnectionModeSelector({ isConnected, connectionMode }) 
         ].join(" ")}
         title={`Mode: ${mode === "hybrid" ? "Hybrid" : "Full-Offline"} — ${wsUrl}`}
       >
-        {/* Status dot */}
+        {/* Status dot: green=connected, amber=checking, red=disconnected */}
         <span
           className={[
             "inline-block h-2.5 w-2.5 rounded-full ring-2 ring-offset-1 ring-offset-amv-grey",
             isConnected
               ? "bg-emerald-400 ring-emerald-400/40"
-              : "bg-rose-400 ring-rose-400/40 animate-pulse",
+              : isChecking
+                ? "bg-amber-400 ring-amber-400/40 animate-pulse"
+                : "bg-rose-400 ring-rose-400/40 animate-pulse",
           ].join(" ")}
         />
-        <span>{mode === "hybrid" ? "Hybrid" : "Offline"}</span>
+        <span>{mode === "hybrid" ? "Hybrid" : "Local"}</span>
         {/* Tailscale route badge in Hybrid */}
         {mode === "hybrid" && isConnected && tsRoute && (
           <span className={`text-[10px] font-normal ${tsRoute.color}`}>
@@ -140,6 +143,8 @@ export default function ConnectionModeSelector({ isConnected, connectionMode }) 
             <span>Connection Mode</span>
             {isConnected ? (
               <span className="text-emerald-400 normal-case tracking-normal">● Connected</span>
+            ) : isChecking ? (
+              <span className="text-amber-400 normal-case tracking-normal animate-pulse">● Checking…</span>
             ) : (
               <span className="text-rose-400 normal-case tracking-normal animate-pulse">● Disconnected</span>
             )}
@@ -188,7 +193,7 @@ export default function ConnectionModeSelector({ isConnected, connectionMode }) 
               onClick={() => {
                 if (offlineBlocked) {
                   toast.warn(
-                    "Full-Offline requires the desktop app — browsers block ws:// from HTTPS pages."
+                    "Local (offline) connection requires the desktop app — browsers block ws:// from HTTPS pages."
                   );
                   return;
                 }
@@ -204,7 +209,7 @@ export default function ConnectionModeSelector({ isConnected, connectionMode }) 
               ].join(" ")}
             >
               <div className="flex items-center justify-between">
-                <span className="font-medium text-sm">📡 Full-Offline</span>
+                <span className="font-medium text-sm">📡 Local (offline)</span>
                 {mode === "offline" && (
                   <span className="text-[10px] bg-amv-maroon/30 text-amv-white/90 px-2 py-0.5 rounded-full">
                     Active

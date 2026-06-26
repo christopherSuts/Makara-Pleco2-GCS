@@ -53,6 +53,7 @@ const calculateBatteryTime = (currentBattery) => {
 export default function StatusPanel({
   telemetry,
   isBackendConnected,
+  connectionStatus = "connected",
 }) {
   // Force a periodic re-render so the heartbeat-freshness check (and the
   // live/red indicator) stays current even when telemetry STOPS arriving
@@ -72,6 +73,9 @@ export default function StatusPanel({
   // Logical connection: Backend WS is connected AND Heartbeat is fresh (<3s)
   const isHeartbeatFresh = lastHeartbeat > 0 && (now - lastHeartbeat) < 3000;
   const isConnected = isBackendConnected && isHeartbeatFresh;
+  // While the WS handshake is still being verified, show an amber "checking"
+  // state instead of a hard red so the indicators agree across the GUI.
+  const isChecking = connectionStatus === "connecting" && !isConnected;
 
   // 2. Extract Data
   // Thrusters
@@ -133,8 +137,17 @@ export default function StatusPanel({
     <div className="bg-amv-grey/90 border border-white/10 rounded-2xl p-3 shadow-xl h-full flex flex-col gap-1 overflow-auto backdrop-blur-md">
       <div className="flex items-center justify-center gap-2 mb-1 shrink-0">
         <h3 className="text-sm font-bold text-amv-white uppercase tracking-wider">ArduPilot Status</h3>
-        {/* Telemetry Indicator */}
-        <div className={`w-2 h-2 rounded-full ${isConnected ? "bg-emerald-500 shadow-[0_0_8px_#10b981]" : "bg-red-500/50"}`} title={isConnected ? "Telemetry Live" : "No Signal"}></div>
+        {/* Telemetry Indicator: green=live, amber=checking, red=no signal */}
+        <div
+          className={`w-2 h-2 rounded-full ${
+            isConnected
+              ? "bg-emerald-500 shadow-[0_0_8px_#10b981]"
+              : isChecking
+                ? "bg-amber-400 shadow-[0_0_8px_#f59e0b] animate-pulse"
+                : "bg-red-500/50"
+          }`}
+          title={isConnected ? "Telemetry Live" : isChecking ? "Checking…" : "No Signal"}
+        ></div>
       </div>
 
       <div className={`space-y-1 text-xs font-medium text-amv-white/80 flex-1 overflow-auto transition-opacity duration-300 ${isConnected ? "opacity-100" : "opacity-40 grayscale pointer-events-none"}`}>

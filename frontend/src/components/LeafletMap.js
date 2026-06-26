@@ -310,7 +310,7 @@ export default function LeafletMap({
         <TileLayer
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           maxZoom={22}
-          maxNativeZoom={19}
+          maxNativeZoom={19.2}
         />
 
         <GcsLocationProvider

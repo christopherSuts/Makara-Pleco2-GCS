@@ -78,7 +78,7 @@ function estimateBatteryNeededMah(pathLengthMeters) {
 }
 
 export default function HomePage() {
-    const { telemetry, isConnected, connectionMode, send } = useTelemetry();
+    const { telemetry, isConnected, connectionStatus, connectionMode, send } = useTelemetry();
     const bathymetry = useBathymetry(telemetry);
     const asvPosition = telemetry.GLOBAL_POSITION_INT;
     const perimeter = usePerimeter(asvPosition);
@@ -458,7 +458,7 @@ export default function HomePage() {
 
                 {/* Connection Mode Selector — top right above panels */}
                 <div className="absolute top-3 right-[475px] pointer-events-auto z-20">
-                    <ConnectionModeSelector isConnected={isConnected} connectionMode={connectionMode} />
+                    <ConnectionModeSelector isConnected={isConnected} connectionStatus={connectionStatus} connectionMode={connectionMode} />
                 </div>
 
 
@@ -467,7 +467,7 @@ export default function HomePage() {
 
                     {/* Top Row */}
                     <div className="col-start-2 row-start-1 min-w-0 shadow-lg pointer-events-auto">
-                        <StatusPanel telemetry={telemetry} isBackendConnected={isConnected} />
+                        <StatusPanel telemetry={telemetry} isBackendConnected={isConnected} connectionStatus={connectionStatus} />
                     </div>
 
 
@@ -487,7 +487,7 @@ export default function HomePage() {
                         <YawPitchRollPanel telemetry={telemetry} />
                     </div>
                     <div className="col-start-2 row-start-2 min-w-0 pointer-events-auto">
-                        <LogPanel telemetry={telemetry} isBackendConnected={isConnected} className="h-full w-full" />
+                        <LogPanel telemetry={telemetry} isBackendConnected={isConnected} connectionStatus={connectionStatus} className="h-full w-full" />
                     </div>
 
                     <div className="col-start-3 row-start-2 min-w-0 shrink-0 shadow-lg pointer-events-auto">

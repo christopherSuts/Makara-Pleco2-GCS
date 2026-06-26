@@ -27,7 +27,7 @@ export default function CenterModeToggle({ centerMode, setCenterMode }) {
           ${isFree ? "bg-amv-maroon text-white ring-1 ring-white/20" : "bg-amv-grey/90 text-amv-white/70 border border-white/10 hover:bg-amv-grey hover:text-amv-white"}`}
         title="Free pan/zoom"
       >
-        Free
+        No-Lock
       </button>
     </div>
   );
