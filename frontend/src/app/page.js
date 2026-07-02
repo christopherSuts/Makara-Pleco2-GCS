@@ -3,7 +3,6 @@ import SidebarButton from "@/components/ui/SidebarButton";
 import YawPitchRollPanel from "@/components/YawPitchRollPanel";
 import StatusPanel from "@/components/StatusPanel";
 import EchosounderPanel from "@/components/EchosounderPanel";
-import BathymetryModal from "@/components/Mapping3DModal";
 import ControlsPanel from "@/components/ControlsPanel";
 import ConfirmModal from "@/components/ui/ConfirmModal";
 import LoadPerimeterModal from "@/components/ui/LoadPerimeterModal";
@@ -23,6 +22,7 @@ import { useTelemetry } from "@/components/features/useTelemetry";
 import { useBathymetry } from "@/components/features/useBathymetry";
 import { pathToMissionItems } from "@/lib/missionWP";
 import { toast } from "react-toastify";
+import { useRouter } from "next/navigation";
 
 const ASSUMED_SPEED_MPS = 0.514444; // 1 knot in meters/second
 
@@ -84,6 +84,7 @@ export default function HomePage() {
     const perimeter = usePerimeter(asvPosition);
     const boundaries = useBoundaries();
     const path = usePath();
+    const router = useRouter();
 
     const [pathParamsOpen, setPathParamsOpen] = useState(false);
     const [pendingOrientation, setPendingOrientation] = useState("TB");
@@ -103,7 +104,6 @@ export default function HomePage() {
     const [homePickMode, setHomePickMode] = useState(false);
 
 
-    const [bathymetryOpen, setBathymetryOpen] = useState(false);
     const [pathSummaryOpen, setPathSummaryOpen] = useState(false);
     const [missionAutoOpenToken, setMissionAutoOpenToken] = useState(0);
     const [pathSummary, setPathSummary] = useState({
@@ -156,16 +156,6 @@ export default function HomePage() {
         console.log("Setting Mode: RTL");
         send({ type: "SET_MODE", payload: { mode: "RTL" } });
     };
-
-    // Path log handlers
-    const handleGetPathLogList = () => {
-        send({ type: "GET_LIST_PATH_LOGS", payload: {} })
-
-    }
-
-    const handleGetPathLog = (fileName) => {
-        send({ type: "GET_PATH_LOG", payload: { "log": fileName } })
-    }
 
     // Icons
     const PerimeterIcon = (
@@ -374,23 +364,6 @@ export default function HomePage() {
                         ]}
                     />
                     <SidebarButton
-                        label="Visualisation"
-                        icon={
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-6 h-6">
-                                <path d="M2 12h20M2 12l10-10M2 12l10 10" />{/* Simple geometric icon */}
-                                <rect x="2" y="2" width="20" height="20" rx="2" className="opacity-50" />
-                            </svg>
-                        }
-                        menuTitle="Data Visualisation"
-                        menu={[
-                            {
-                                label: "3D Bathymetry",
-                                onClick: () => setBathymetryOpen(true),
-                                icon: "🧊"
-                            }
-                        ]}
-                    />
-                    <SidebarButton
                         label="Mission"
                         openOnClick
                         autoOpenToken={missionAutoOpenToken}
@@ -453,6 +426,23 @@ export default function HomePage() {
                                 )}
                             </div>
                         }
+                    />
+                    <SidebarButton
+                        label="Visualisation"
+                        icon={
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-6 h-6">
+                                <path d="M2 12h20M2 12l10-10M2 12l10 10" />{/* Simple geometric icon */}
+                                <rect x="2" y="2" width="20" height="20" rx="2" className="opacity-50" />
+                            </svg>
+                        }
+                        menuTitle="Data Visualisation"
+                        menu={[
+                            {
+                                label: "Review Mode",
+                                onClick: () => router.push("/review"),
+                                icon: "🎬"
+                            }
+                        ]}
                     />
                 </aside>
 
@@ -613,13 +603,6 @@ export default function HomePage() {
                         }
                         setPathParamsOpen(false);
                     }}
-                />
-                <BathymetryModal
-                    open={bathymetryOpen}
-                    onClose={() => setBathymetryOpen(false)}
-                    handleGetPathLogList={handleGetPathLogList}
-                    handleGetPathLog={handleGetPathLog}
-                    telemetry={telemetry}
                 />
             </div>
         </div>

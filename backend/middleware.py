@@ -49,8 +49,8 @@ COORD_ECHO_LOG_FOLDER = "path_logs"
 
 # Global handles so we can close them on shutdown
 _mav = None
-_reader_task: Optional[asyncio.Task] = None
-_mavrouter_proc: Optional[asyncio.subprocess.Process] = None
+_reader_task: Optional[asyncio.Task] = None                     # process for running mavlink reader
+_mavrouter_proc: Optional[asyncio.subprocess.Process] = None    # process for running mavlink-routerd
 _mavrouter_log_fh = None
 # Path of the serial device mavlink-routerd is currently bound to (None = link down)
 _current_serial_device: Optional[str] = None
@@ -686,7 +686,7 @@ async def serial_watchdog_loop(stop_event: asyncio.Event):
                 _mavrouter_proc is not None
                 and _mavrouter_proc.returncode is not None
             ):
-                wslog(
+                wslog(  
                     "warn",
                     f"mavlink-routerd exited unexpectedly (code {_mavrouter_proc.returncode}) — will restart",
                 )

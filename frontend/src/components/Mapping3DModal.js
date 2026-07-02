@@ -2,342 +2,446 @@
 import { useState, useRef, useEffect } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
-import * as turf from "@turf/turf";
-import LatLon from "geodesy/latlon-spherical.js";
+import { computeTin, edgeThreshold } from "@/lib/bathyTin";
+import { depthToRgb } from "@/lib/depthColor";
 
-export default function BathymetryModal({ open, onClose, handleGetPathLogList, handleGetPathLog, telemetry }) {
-    const canvasContainerRef = useRef(null);
-    const requestRef = useRef(null);
-    const rendererRef = useRef(null);
+/**
+ * BathymetryModal — 3D survey surface viewer.
+ *
+ * Data sources (first match wins):
+ *   1. `points` prop            → review mode (CSV loaded client-side)
+ *   2. "Mock Data" button       → synthetic demo
+ *   3. telemetry.PATH_LOG_DATA  → live mode (path logs fetched from middleware)
+ * Each point is { lat, lon, depth_m }.
+ *
+ * Surface method: Delaunay (TIN) linear interpolation of the actual soundings,
+ * with per-triangle edge-length culling so the mesh only covers the surveyed
+ * swath — triangles that would bridge a data gap (a window dropout, the 8-min
+ * inter-session gap, or a concave bay) have long edges and are removed. This is
+ * the in-browser equivalent of clipping to a track buffer: no seabed is drawn
+ * where the boat never went, and nothing is extrapolated beyond the soundings.
+ *
+ * Perf: this component is meant to be lazy-loaded (next/dynamic, ssr:false) and
+ * only mounted while open, so three.js + delaunator stay out of the initial
+ * page bundle. The renderer/scene are built once per dataset; moving the
+ * exaggeration/coverage sliders only rebuilds the mesh geometry, not the WebGL
+ * context.
+ */
+export default function BathymetryModal({
+  open,
+  onClose,
+  handleGetPathLogList,
+  handleGetPathLog,
+  telemetry,
+  points = null,
+  title = "3D Bathymetry Viz",
+  minConfidence = 0,
+  onMinConfidenceChange,
+  confidenceRange = [0, 100],
+}) {
+  const canvasContainerRef = useRef(null);
+  const requestRef = useRef(null);
+  const rendererRef = useRef(null);
+  const sceneRef = useRef(null);
+  const cameraRef = useRef(null);
+  const controlsRef = useRef(null);
+  const surfaceMeshRef = useRef(null);
+  const rawPointsRef = useRef(null);  // THREE.Points overlay object
+  const rawInputRef = useRef(null);   // all input soundings (with confidence)
+  const tinRef = useRef(null);        // cached TIN for the current confidence threshold
+  const tinConfRef = useRef(null);    // confidence threshold the cached TIN was built at
+  const extentRef = useRef(1);        // full-data extent (stable framing/grid)
+  const buildSurfaceRef = useRef(null);
+  const framedRef = useRef(false);
 
-    const [dataLoaded, setDataLoaded] = useState(false);
-    const [selectedLog, setSelectedLog] = useState("");
-    const [mockPoints, setMockPoints] = useState(null);
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const [selectedLog, setSelectedLog] = useState("");
+  const [mockPoints, setMockPoints] = useState(null);
 
-    // 1. Fetch the list of logs when the modal opens
-    useEffect(() => {
-        if (open) {
-            handleGetPathLogList();
-        } else {
-            setDataLoaded(false);
-            setSelectedLog("");
-        }
-    }, [open]);
+  // Visualization params (data-driven surface controls)
+  const [verticalExaggeration, setVerticalExaggeration] = useState(3);
+  const [coverageKeepPct, setCoverageKeepPct] = useState(90); // keep triangles up to this edge-length percentile
+  const exagRef = useRef(3);
+  const keepRef = useRef(90);
+  const confRef = useRef(minConfidence);
+  useEffect(() => { exagRef.current = verticalExaggeration; }, [verticalExaggeration]);
+  useEffect(() => { keepRef.current = coverageKeepPct; }, [coverageKeepPct]);
+  useEffect(() => { confRef.current = minConfidence; }, [minConfidence]);
 
-    // 2. Watch for incoming path log data to render
-    useEffect(() => {
-        const pointArray = mockPoints || telemetry["PATH_LOG_DATA"]?.pathData;
-        // const pointArray = telemetry["PATH_LOG_DATA"]?.pathData;
+  const reviewMode = Array.isArray(points);
 
-        if (open && pointArray && pointArray.length > 0) {
-            initThreeJS(pointArray);
-            setDataLoaded(true);
-        }
-
-        // Garbage collection
-        return () => {
-            if (requestRef.current) cancelAnimationFrame(requestRef.current);
-            if (rendererRef.current) {
-                rendererRef.current.dispose();
-                rendererRef.current.forceContextLoss();
-                rendererRef.current = null;
-            }
-            if (canvasContainerRef.current) canvasContainerRef.current.innerHTML = "";
-        };
-    }, [mockPoints, telemetry["PATH_LOG_DATA"]?.pathData, open]);
-
-    const handleLogSelect = (e) => {
-        const fileName = e.target.value;
-        setSelectedLog(fileName);
-
-        if (fileName) {
-            setDataLoaded(false);
-            handleGetPathLog(fileName);
-        }
-    };
-
-    // --- COLOR MAPPING UTILITY ---
-    // Classic Heatmap/Bathymetry Scale: Red (Shallow) -> Yellow -> Cyan -> Deep Blue
-    const bathymetryPalette = [
-        new THREE.Color(0xd73027), // Shallowest: Red
-        new THREE.Color(0xfdae61), // Orange
-        //new THREE.Color(0xfee090), // Yellow
-        //new THREE.Color(0xe0f3f8), // Light Cyan
-        //new THREE.Color(0xabd9e9), // Light Blue
-        //new THREE.Color(0x74add1), // Medium Blue
-        new THREE.Color(0x4575b4), // Deep Blue
-        new THREE.Color(0x313695)  // Deepest: Dark Blue
-    ];
-
-    const getDepthColor = (normDepth) => {
-        const t = Math.max(0, Math.min(1, normDepth));
-        const segments = bathymetryPalette.length - 1;
-        const scaled = t * segments;
-        const index = Math.floor(scaled);
-        const fraction = scaled - index;
-
-        // If exactly at max depth, return the last color
-        if (index >= segments) return bathymetryPalette[segments].clone();
-
-        // Smoothly blend between the two nearest colors
-        const color = bathymetryPalette[index].clone();
-        color.lerp(bathymetryPalette[index + 1], fraction);
-        return color;
-    };
-
-    function generateMockBathymetry() {
-        const points = [];
-
-        const baseLat = 37.7749;
-        const baseLon = -122.4194;
-
-        const rows = 60;
-        const cols = 60;
-
-        // location of deep pit (center of grid)
-        const pitRow = rows * 0.55;
-        const pitCol = cols * 0.45;
-
-        for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < cols; c++) {
-
-                const lat = baseLat + r * 0.00002;
-                const lon = baseLon + c * 0.00002;
-
-                // --- Base slope (gradually deeper downward)
-                const slope = r * 0.06;
-
-                // --- Terrain waves (simulate seabed ridges)
-                const waves =
-                    Math.sin(r * 0.25) * 1.2 +
-                    Math.cos(c * 0.18) * 1.0;
-
-                // --- Deep pit (Gaussian depression)
-                const distSq =
-                    Math.pow(r - pitRow, 2) +
-                    Math.pow(c - pitCol, 2);
-
-                const pitDepth =
-                    Math.exp(-distSq / 180) * 8; // pit intensity
-
-                // --- Random sonar noise
-                const noise = (Math.random() - 0.5) * 0.3;
-
-                const depth =
-                    4 + slope + waves + pitDepth + noise;
-
-                points.push({
-                    lat,
-                    lon,
-                    depth_m: depth
-                });
-            }
-        }
-
-        return points;
+  // 1. Fetch the list of logs when the modal opens (live mode only)
+  useEffect(() => {
+    if (open) {
+      if (!reviewMode) handleGetPathLogList?.();
+    } else {
+      setDataLoaded(false);
+      setSelectedLog("");
+      framedRef.current = false;
     }
-    // 3. Initialize Three.js with Turf IDW & Geodesy Projection
-    const initThreeJS = (points) => {
-        if (!canvasContainerRef.current) return;
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-        // --- DATA PROCESSING (Turf) ---
-        const features = points.map(p => turf.point([p.lon, p.lat], { depth: p.depth_m }));
-        const pointsFC = turf.featureCollection(features);
+  // 2. Build/rebuild the scene when the source data changes
+  useEffect(() => {
+    const pointArray =
+      points || mockPoints || telemetry?.["PATH_LOG_DATA"]?.pathData;
 
-        const bbox = turf.bbox(pointsFC);
-        const diagDist = turf.distance(turf.point([bbox[0], bbox[1]]), turf.point([bbox[2], bbox[3]]), { units: 'kilometers' });
-        const cellSize = Math.max(diagDist / 50, 0.0005);
+    if (open && pointArray && pointArray.length > 0) {
+      framedRef.current = false;
+      initScene(pointArray);
+      setDataLoaded(true);
+    }
 
-        const grid = turf.interpolate(pointsFC, cellSize, {
-            gridType: 'point',
-            property: 'depth',
-            units: 'kilometers',
-            weight: 2
-        });
-
-        const sortedGrid = grid.features.sort((a, b) => {
-            const latDiff = b.geometry.coordinates[1] - a.geometry.coordinates[1];
-            if (Math.abs(latDiff) > 1e-8) return latDiff;
-            return a.geometry.coordinates[0] - b.geometry.coordinates[0];
-        });
-
-        const topLat = sortedGrid[0].geometry.coordinates[1];
-        let cols = 0;
-        for (let i = 0; i < sortedGrid.length; i++) {
-            if (Math.abs(sortedGrid[i].geometry.coordinates[1] - topLat) < 1e-8) cols++;
-            else break;
-        }
-        const rows = Math.floor(sortedGrid.length / cols);
-
-        // --- SCENE SETUP (ThreeJS) ---
-        const scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x1a1a1a); // Slightly darker background to make colors pop
-
-        scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        dirLight.position.set(100, 200, 50);
-        scene.add(dirLight);
-
-        const width = canvasContainerRef.current.clientWidth;
-        const height = canvasContainerRef.current.clientHeight;
-
-        const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 10000);
-        const renderer = new THREE.WebGLRenderer({ antialias: true });
-        renderer.setSize(width, height);
-        rendererRef.current = renderer;
-
-        canvasContainerRef.current.innerHTML = "";
-        canvasContainerRef.current.appendChild(renderer.domElement);
-        const controls = new OrbitControls(camera, renderer.domElement);
-        controls.listenToKeyEvents(canvasContainerRef.current);
-
-        canvasContainerRef.current.focus();
-
-        // --- GEOMETRY GENERATION (Geodesy) ---
-        const centerLon = (bbox[0] + bbox[2]) / 2;
-        const centerLat = (bbox[1] + bbox[3]) / 2;
-        const origin = new LatLon(centerLat, centerLon);
-
-        const surfaceGeo = new THREE.BufferGeometry();
-        const vertices = new Float32Array(rows * cols * 3);
-        const colors = new Float32Array(rows * cols * 3);
-
-        // Use max value, fallback to 0.001 to prevent division by zero errors
-        const maxDepth = Math.max(...sortedGrid.map(f => f.properties.depth), 0.001);
-        const minDepth = Math.max(...sortedGrid.map(f => f.properties.depth), 0.001);
-
-        for (let i = 0; i < rows * cols; i++) {
-            const feat = sortedGrid[i];
-            const pt = new LatLon(feat.geometry.coordinates[1], feat.geometry.coordinates[0]);
-
-            const dist = origin.distanceTo(pt);
-            const brng = origin.initialBearingTo(pt);
-
-            const x = dist * Math.sin(brng * Math.PI / 180);
-            const z = -dist * Math.cos(brng * Math.PI / 180);
-            const y = -feat.properties.depth;
-
-            vertices[i * 3] = x;
-            vertices[i * 3 + 1] = y;
-            vertices[i * 3 + 2] = z;
-
-            // Apply new bathymetry color logic
-            const normDepth = Math.min(Math.max(feat.properties.depth / maxDepth, 0), 1);
-            const pointColor = getDepthColor(normDepth);
-            colors[i * 3] = pointColor.r;
-            colors[i * 3 + 1] = pointColor.g;
-            colors[i * 3 + 2] = pointColor.b;
-        }
-
-        surfaceGeo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
-        surfaceGeo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-        const indices = [];
-        for (let r = 0; r < rows - 1; r++) {
-            for (let c = 0; c < cols - 1; c++) {
-                const a = r * cols + c;
-                const b = r * cols + (c + 1);
-                const d = (r + 1) * cols + c;
-                const e = (r + 1) * cols + (c + 1);
-                indices.push(a, b, d);
-                indices.push(b, e, d);
-            }
-        }
-        surfaceGeo.setIndex(indices);
-        surfaceGeo.computeVertexNormals();
-
-        const surfaceMat = new THREE.MeshStandardMaterial({
-            vertexColors: true,
-            side: THREE.DoubleSide,
-            flatShading: true // Gives that cool low-poly topographic look
-        });
-        const surfaceMesh = new THREE.Mesh(surfaceGeo, surfaceMat);
-        scene.add(surfaceMesh);
-
-        // Render raw ASV track data
-        const rawGeo = new THREE.BufferGeometry();
-        const rawVerts = [];
-        points.forEach(p => {
-            const pt = new LatLon(p.lat, p.lon);
-            const dist = origin.distanceTo(pt);
-            const brng = origin.initialBearingTo(pt);
-            const x = dist * Math.sin(brng * Math.PI / 180);
-            const z = -dist * Math.cos(brng * Math.PI / 180);
-            const y = -p.depth_m;
-            rawVerts.push(x, y + 0.05, z);
-        });
-        rawGeo.setAttribute('position', new THREE.Float32BufferAttribute(rawVerts, 3));
-        const rawMat = new THREE.PointsMaterial({ color: 0xffffff, size: 0.5 });
-        scene.add(new THREE.Points(rawGeo, rawMat));
-
-        scene.add(new THREE.GridHelper(100, 10));
-        scene.add(new THREE.AxesHelper(5));
-
-        camera.position.set(50, Math.max(maxDepth + 20, 40), 50);
-        controls.target.set(0, -(maxDepth + minDepth) / 2, 0);
-        controls.update();
-
-        const animate = () => {
-            requestRef.current = requestAnimationFrame(animate);
-            controls.update();
-            renderer.render(scene, camera);
-        };
-        animate();
+    return () => {
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
+      if (rendererRef.current) {
+        rendererRef.current.dispose();
+        rendererRef.current.forceContextLoss();
+        rendererRef.current = null;
+      }
+      sceneRef.current = null;
+      surfaceMeshRef.current = null;
+      rawPointsRef.current = null;
+      rawInputRef.current = null;
+      tinRef.current = null;
+      tinConfRef.current = null;
+      buildSurfaceRef.current = null;
+      if (canvasContainerRef.current) canvasContainerRef.current.innerHTML = "";
     };
+  }, [points, mockPoints, telemetry?.["PATH_LOG_DATA"]?.pathData, open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    if (!open) return null;
+  // 3. Slider changes → rebuild only the mesh geometry (cheap), not the context
+  useEffect(() => {
+    if (buildSurfaceRef.current) buildSurfaceRef.current();
+  }, [verticalExaggeration, coverageKeepPct, minConfidence]);
 
-    const logsList = telemetry["PATH_LOGS_LIST"]?.logs || [];
+  const handleLogSelect = (e) => {
+    const fileName = e.target.value;
+    setSelectedLog(fileName);
+    if (fileName) {
+      setDataLoaded(false);
+      handleGetPathLog?.(fileName);
+    }
+  };
 
-    return (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div className="relative w-[80vw] h-[80vh] bg-amv-grey rounded-xl overflow-hidden shadow-2xl border border-white/10 flex flex-col">
+  function generateMockBathymetry() {
+    const points = [];
+    const baseLat = 37.7749;
+    const baseLon = -122.4194;
+    const rows = 60;
+    const cols = 60;
+    const pitRow = rows * 0.55;
+    const pitCol = cols * 0.45;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const lat = baseLat + r * 0.00002;
+        const lon = baseLon + c * 0.00002;
+        const slope = r * 0.06;
+        const waves = Math.sin(r * 0.25) * 1.2 + Math.cos(c * 0.18) * 1.0;
+        const distSq = Math.pow(r - pitRow, 2) + Math.pow(c - pitCol, 2);
+        const pitDepth = Math.exp(-distSq / 180) * 8;
+        const noise = (Math.random() - 0.5) * 0.3;
+        const depth = 4 + slope + waves + pitDepth + noise;
+        points.push({ lat, lon, depth_m: depth });
+      }
+    }
+    return points;
+  }
 
-                {/* Header */}
-                <div className="p-4 border-b border-white/10 flex justify-between items-center bg-black/20 z-10">
-                    <h2 className="text-white font-bold text-lg">3D Bathymetry Viz</h2>
-                    <div className="flex gap-4 items-center">
-                        <button
-                            onClick={() => {
-                                setMockPoints(generateMockBathymetry());
-                                setDataLoaded(false);
-                            }}
-                            className="bg-[#6B0F2B] hover:bg-[#8c1438] text-white text-xs px-3 py-1 rounded"
-                        >
-                            Mock Data
-                        </button>
-                        <select
-                            value={selectedLog}
-                            onChange={handleLogSelect}
-                            className="bg-[#1F1F22] text-white border border-white/20 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-[#6B0F2B]"
-                        >
-                            <option value="">-- Select a log file --</option>
-                            {logsList.map((logName, idx) => (
-                                <option key={idx} value={logName}>
-                                    {logName}
-                                </option>
-                            ))}
-                        </select>
-                        <button onClick={onClose} className="text-white/60 hover:text-white">✕</button>
-                    </div>
-                </div>
+  /** Filter by confidence → (re)interpolate → rebuild the surface + points. */
+  function buildSurface() {
+    const scene = sceneRef.current;
+    if (!scene || !rawInputRef.current) return;
 
-                {/* Wrapper Container */}
-                <div className="flex-1 w-full bg-black relative">
-                    {/* React-Managed UI Overlay */}
-                    <div className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center">
-                        {!dataLoaded && selectedLog === "" && (
-                            <div className="text-white/30">Select a log file to visualize</div>
-                        )}
-                        {!dataLoaded && selectedLog !== "" && (
-                            <div className="text-white/30">Interpolating Point Cloud...</div>
-                        )}
-                    </div>
+    // Recompute the TIN only when the confidence threshold changed. Exaggeration
+    // and coverage don't alter the point set, so they reuse the cached TIN.
+    const conf = confRef.current;
+    if (tinConfRef.current !== conf || !tinRef.current) {
+      const accepted = rawInputRef.current.filter((p) => {
+        const c = Number(p.depth_confidence ?? p.conf ?? p.confidence);
+        return !Number.isFinite(c) || c >= conf; // missing confidence passes
+      });
+      tinRef.current = computeTin(accepted);
+      tinConfRef.current = conf;
+    }
+    const tin = tinRef.current;
 
-                    {/* ThreeJS-Managed Canvas Container */}
-                    <div ref={canvasContainerRef} tabIndex={0} onKeyDown={(e) => e.stopPropagation()} className="absolute inset-0 z-0" />
-                </div>
-            </div>
+    // Too few accepted soundings to form a surface → clear it.
+    if (!tin) {
+      if (surfaceMeshRef.current) {
+        scene.remove(surfaceMeshRef.current);
+        surfaceMeshRef.current.geometry.dispose();
+        surfaceMeshRef.current = null;
+      }
+      if (rawPointsRef.current) {
+        scene.remove(rawPointsRef.current);
+        rawPointsRef.current.geometry.dispose();
+        rawPointsRef.current = null;
+      }
+      return;
+    }
+
+    const { xs, zs, depths, tris, triMaxEdge, minDepth, maxDepth } = tin;
+    const n = xs.length;
+    const exag = exagRef.current;
+    const span = maxDepth - minDepth || 1; // used for camera framing
+
+    // Edge-length cull threshold = keep triangles up to this percentile.
+    const threshold = edgeThreshold(triMaxEdge, keepRef.current);
+
+    // Vertices + per-vertex depth color (dynamic: red = min → green = max)
+    const positions = new Float32Array(n * 3);
+    const colors = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      positions[i * 3] = xs[i];
+      positions[i * 3 + 1] = -depths[i] * exag;
+      positions[i * 3 + 2] = zs[i];
+      const { r, g, b } = depthToRgb(depths[i], minDepth, maxDepth);
+      colors[i * 3] = r / 255;
+      colors[i * 3 + 1] = g / 255;
+      colors[i * 3 + 2] = b / 255;
+    }
+
+    // Keep only triangles within the surveyed swath (short edges)
+    const index = [];
+    for (let t = 0; t < triMaxEdge.length; t++) {
+      if (triMaxEdge[t] <= threshold) {
+        index.push(tris[t * 3], tris[t * 3 + 1], tris[t * 3 + 2]);
+      }
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    geo.setIndex(index);
+    geo.computeVertexNormals();
+
+    // Swap surface mesh
+    if (surfaceMeshRef.current) {
+      scene.remove(surfaceMeshRef.current);
+      surfaceMeshRef.current.geometry.dispose();
+    }
+    const mat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      side: THREE.DoubleSide,
+      flatShading: true,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    scene.add(mesh);
+    surfaceMeshRef.current = mesh;
+
+    // Swap raw sounding points overlay (sits just above the surface)
+    if (rawPointsRef.current) {
+      scene.remove(rawPointsRef.current);
+      rawPointsRef.current.geometry.dispose();
+    }
+    const rawGeo = new THREE.BufferGeometry();
+    const rawVerts = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      rawVerts[i * 3] = xs[i];
+      rawVerts[i * 3 + 1] = -depths[i] * exag + 0.05;
+      rawVerts[i * 3 + 2] = zs[i];
+    }
+    rawGeo.setAttribute("position", new THREE.BufferAttribute(rawVerts, 3));
+    const rawMat = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: Math.max(0.5, extentRef.current / 300),
+    });
+    const rawPts = new THREE.Points(rawGeo, rawMat);
+    scene.add(rawPts);
+    rawPointsRef.current = rawPts;
+
+    // Frame the camera once per dataset
+    if (!framedRef.current && cameraRef.current && controlsRef.current) {
+      const midY = (-(minDepth + maxDepth) / 2) * exag;
+      const ext = extentRef.current;
+      cameraRef.current.position.set(ext * 0.7, span * exag + ext * 0.5 + 10, ext * 0.7);
+      controlsRef.current.target.set(0, midY, 0);
+      controlsRef.current.update();
+      framedRef.current = true;
+    }
+  }
+
+  /** One-time scene setup + projection + Delaunay; then build the surface. */
+  const initScene = (rawPoints) => {
+    if (!canvasContainerRef.current) return;
+
+    // --- interpolate: shared Delaunay TIN (projected metres + per-tri edges) ---
+    // Store the full input; the actual mesh TIN is (re)built in buildSurface from
+    // the confidence-filtered subset. A full-data TIN here fixes a stable extent
+    // so grid/camera framing don't jump as the confidence threshold changes.
+    rawInputRef.current = rawPoints;
+    tinRef.current = null;
+    tinConfRef.current = null;
+    const fullTin = computeTin(rawPoints);
+    if (!fullTin) return;
+    extentRef.current = fullTin.extent;
+    const extent = fullTin.extent;
+
+    // --- scene / renderer (once per dataset) ---
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a1a);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(100, 200, 50);
+    scene.add(dirLight);
+
+    const width = canvasContainerRef.current.clientWidth;
+    const height = canvasContainerRef.current.clientHeight;
+    const camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 100000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(width, height);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+    canvasContainerRef.current.innerHTML = "";
+    canvasContainerRef.current.appendChild(renderer.domElement);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.listenToKeyEvents(canvasContainerRef.current);
+    canvasContainerRef.current.focus();
+
+    const gridSize = Math.ceil((extent * 2) / 10) * 10;
+    scene.add(new THREE.GridHelper(gridSize, 20, 0x444444, 0x333333));
+    scene.add(new THREE.AxesHelper(Math.max(5, extent * 0.1)));
+
+    rendererRef.current = renderer;
+    sceneRef.current = scene;
+    cameraRef.current = camera;
+    controlsRef.current = controls;
+    buildSurfaceRef.current = buildSurface;
+
+    buildSurface();
+
+    const animate = () => {
+      requestRef.current = requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    };
+    animate();
+  };
+
+  if (!open) return null;
+
+  const logsList = telemetry?.["PATH_LOGS_LIST"]?.logs || [];
+
+  return (
+    <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="relative w-[80vw] h-[80vh] bg-amv-grey rounded-xl overflow-hidden shadow-2xl border border-white/10 flex flex-col">
+        {/* Header */}
+        <div className="p-4 border-b border-white/10 flex justify-between items-center bg-black/20 z-10">
+          <h2 className="text-white font-bold text-lg">{title}</h2>
+          <div className="flex gap-4 items-center">
+            {!reviewMode && (
+              <>
+                <button
+                  onClick={() => {
+                    setMockPoints(generateMockBathymetry());
+                    setDataLoaded(false);
+                  }}
+                  className="bg-[#6B0F2B] hover:bg-[#8c1438] text-white text-xs px-3 py-1 rounded"
+                >
+                  Mock Data
+                </button>
+                <select
+                  value={selectedLog}
+                  onChange={handleLogSelect}
+                  className="bg-[#1F1F22] text-white border border-white/20 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-[#6B0F2B]"
+                >
+                  <option value="">-- Select a log file --</option>
+                  {logsList.map((logName, idx) => (
+                    <option key={idx} value={logName}>
+                      {logName}
+                    </option>
+                  ))}
+                </select>
+              </>
+            )}
+            <button onClick={onClose} className="text-white/60 hover:text-white">
+              ✕
+            </button>
+          </div>
         </div>
-    );
+
+        {/* Wrapper Container */}
+        <div className="flex-1 w-full bg-black relative">
+          {/* React-Managed UI Overlay */}
+          <div className="absolute inset-0 z-10 pointer-events-none flex items-center justify-center">
+            {!dataLoaded && !reviewMode && selectedLog === "" && (
+              <div className="text-white/30">Select a log file to visualize</div>
+            )}
+            {!dataLoaded && !reviewMode && selectedLog !== "" && (
+              <div className="text-white/30">Building TIN surface…</div>
+            )}
+            {!dataLoaded && reviewMode && (
+              <div className="text-white/30">Building TIN surface…</div>
+            )}
+          </div>
+
+          {/* Controls: vertical exaggeration + coverage tightness */}
+          {dataLoaded && (
+            <div className="absolute bottom-3 left-3 z-10 rounded-xl bg-black/60 backdrop-blur border border-white/10 px-3 py-2 text-[11px] text-white/80 space-y-2 w-56">
+              <label className="block">
+                <div className="flex justify-between">
+                  <span>Vertical exaggeration</span>
+                  <span className="font-mono text-white">{verticalExaggeration}×</span>
+                </div>
+                <input
+                  type="range"
+                  min={1}
+                  max={10}
+                  step={1}
+                  value={verticalExaggeration}
+                  onChange={(e) => setVerticalExaggeration(Number(e.target.value))}
+                  className="w-full accent-[#6B0F2B] cursor-pointer"
+                />
+              </label>
+              <label className="block">
+                <div className="flex justify-between">
+                  <span>Coverage (edge keep)</span>
+                  <span className="font-mono text-white">{coverageKeepPct}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={50}
+                  max={100}
+                  step={1}
+                  value={coverageKeepPct}
+                  onChange={(e) => setCoverageKeepPct(Number(e.target.value))}
+                  className="w-full accent-[#6B0F2B] cursor-pointer"
+                />
+                <div className="text-white/40 text-[10px] mt-0.5">
+                  Lower = tighter to track (culls gap-spanning triangles)
+                </div>
+              </label>
+              <label className="block">
+                <div className="flex justify-between">
+                  <span>Min confidence</span>
+                  <span className="font-mono text-white">{minConfidence}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={Math.floor(confidenceRange[0])}
+                  max={100}
+                  step={1}
+                  value={minConfidence}
+                  onChange={(e) => onMinConfidenceChange?.(Number(e.target.value))}
+                  className="w-full accent-[#6B0F2B] cursor-pointer"
+                />
+                <div className="text-white/40 text-[10px] mt-0.5">
+                  Higher = stricter (drops low-confidence soundings)
+                </div>
+              </label>
+            </div>
+          )}
+
+          {/* ThreeJS-Managed Canvas Container */}
+          <div
+            ref={canvasContainerRef}
+            tabIndex={0}
+            onKeyDown={(e) => e.stopPropagation()}
+            className="absolute inset-0 z-0"
+          />
+        </div>
+      </div>
+    </div>
+  );
 }
