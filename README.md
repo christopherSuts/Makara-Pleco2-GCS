@@ -13,6 +13,9 @@ Dikembangkan oleh Fakultas Teknik Universitas Indonesia dalam kerangka Program P
 
 ---
 
+## Versi Aplikasi Desktop
+- [Unduh di sini](https://drive.google.com/file/d/1aX_f_PRMNoGYpL2J10eUM2ciMgnbisuX/view?usp=drive_link)
+
 ## Referensi Dokumentasi
 
 | Kebutuhan | Rujukan |
