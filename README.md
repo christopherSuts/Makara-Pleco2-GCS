@@ -60,7 +60,7 @@ Dikembangkan oleh Fakultas Teknik Universitas Indonesia dalam kerangka Program P
 
 ## Arsitektur Sistem
 
-![System Architecture Diagram](architecture_diagram.png)
+![System Architecture Diagram](architecture_diagram.jpg)
 
 Middleware berjalan langsung di Jetson onboard. Frontend GCS terhubung ke API middleware. Ini mengurangi penggunaan bandwidth — hanya telemetri terproses yang dikirim — dan menjaga wahana tetap otonom bila tautan ke darat terputus.
 
