@@ -12,6 +12,7 @@ files:
 win:
   target: nsis
   icon: electron/icon.png
+  signAndEditExecutable: false
 
 nsis:
   oneClick: true
