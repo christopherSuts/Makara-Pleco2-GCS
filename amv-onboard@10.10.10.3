@@ -7,7 +7,6 @@ from datetime import datetime
 from typing import Dict, Any, Set, Optional
 
 import os
-import socket
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 import uvicorn
@@ -28,9 +27,10 @@ WS_HOST = "0.0.0.0"
 WS_PORT_SSL = 9000                   # Hybrid mode  (wss://)
 WS_PORT_PLAIN = 9001                 # Full-Offline mode (ws://)
 TAILNET_SUFFIX = "tailc2fe55.ts.net"  # Fixed tailnet domain
-ONBOARD_HOSTNAME = socket.gethostname()  # reads Linux hostname (e.g. "amv-onboard")
-SSL_CERT = f"/home/{ONBOARD_HOSTNAME}/pleco-certs/pleco-onboard.crt"
-SSL_KEY = f"/home/{ONBOARD_HOSTNAME}/pleco-certs/pleco-onboard.key"
+ONBOARD_HOSTNAME = os.environ.get("PLECO_ONBOARD_HOSTNAME", "amv-onboard")
+ONBOARD_FQDN = f"{ONBOARD_HOSTNAME}.{TAILNET_SUFFIX}"
+SSL_CERT = f"~/pleco-certs/{ONBOARD_FQDN}.crt"
+SSL_KEY = f"~/pleco-certs/{ONBOARD_FQDN}.key"
 MAVROUTER_CONF_PATH = "/tmp/mavlink-routerd.conf"
 MAVROUTER_LOG_PATH = "/tmp/mavlink-routerd.log"
 

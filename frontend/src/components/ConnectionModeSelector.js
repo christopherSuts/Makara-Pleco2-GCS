@@ -7,6 +7,7 @@ import {
   setMode,
   getWsUrl,
   getSettings,
+  updateSettings,
   testConnection,
   isElectron,
   isSecureOrigin,
@@ -43,11 +44,15 @@ export default function ConnectionModeSelector({ isConnected, connectionStatus =
   const [testing, setTesting] = useState(false);
   const [settings, setSettings] = useState({});
   const [tsRoute, setTsRoute] = useState(null); // { route, rttMs, color }
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [draft, setDraft] = useState({}); // draft edits for endpoint fields
 
   // Sync from localStorage on mount
   useEffect(() => {
     setLocalMode(getMode());
-    setSettings(getSettings());
+    const s = getSettings();
+    setSettings(s);
+    setDraft(s);
   }, []);
 
   // Probe Tailscale route when connected in Hybrid mode
@@ -228,6 +233,91 @@ export default function ConnectionModeSelector({ isConnected, connectionStatus =
                 </div>
               )}
             </button>
+
+            {/* Endpoint settings (collapsible) */}
+            <div className="border-t border-white/5 mt-1 pt-1">
+              <button
+                onClick={() => setSettingsOpen((v) => !v)}
+                className="w-full flex items-center justify-between px-3 py-1.5 text-[11px] text-amv-white/55 hover:text-amv-white/80 transition-colors"
+              >
+                <span>⚙ Endpoint Settings</span>
+                <svg className={`w-3 h-3 opacity-50 transition-transform ${settingsOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {settingsOpen && (() => {
+                const TAILNET_SUFFIX = "tailc2fe55.ts.net";
+                // Extract hostname prefix from full FQDN (strip tailnet suffix)
+                const currentHybridHost = draft.hybridHost || "";
+                const hostnamePrefix = currentHybridHost.endsWith(`.${TAILNET_SUFFIX}`)
+                  ? currentHybridHost.slice(0, -(TAILNET_SUFFIX.length + 1))
+                  : currentHybridHost;
+                return (
+                <div className="px-3 pb-2 space-y-2">
+                  <div>
+                    <label className="block text-[10px] text-amv-white/40 mb-0.5">Onboard Hostname</label>
+                    <div className="flex items-center gap-0">
+                      <input
+                        type="text"
+                        value={hostnamePrefix}
+                        onChange={(e) => {
+                          const prefix = e.target.value;
+                          setDraft((d) => ({
+                            ...d,
+                            hybridHost: prefix ? `${prefix}.${TAILNET_SUFFIX}` : "",
+                          }));
+                        }}
+                        className="flex-1 min-w-0 rounded-l-lg bg-white/5 border border-white/10 border-r-0 px-2 py-1 text-xs font-mono text-amv-white placeholder:text-amv-white/25 focus:border-amv-maroon/50 focus:outline-none"
+                        placeholder="amv-onboard"
+                      />
+                      <span className="rounded-r-lg bg-white/[0.03] border border-white/10 border-l-0 px-2 py-1 text-xs font-mono text-amv-white/35 whitespace-nowrap select-none">
+                        .{TAILNET_SUFFIX}
+                      </span>
+                    </div>
+                    <div className="text-[9px] text-amv-white/30 mt-0.5">Default: amv-onboard</div>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-amv-white/40 mb-0.5">Offline Host (LAN IP)</label>
+                    <input
+                      type="text"
+                      value={draft.offlineHost || ""}
+                      onChange={(e) => setDraft((d) => ({ ...d, offlineHost: e.target.value }))}
+                      className="w-full rounded-lg bg-white/5 border border-white/10 px-2 py-1 text-xs font-mono text-amv-white placeholder:text-amv-white/25 focus:border-amv-maroon/50 focus:outline-none"
+                      placeholder="10.10.10.3"
+                    />
+                    <div className="text-[9px] text-amv-white/30 mt-0.5">Default: 10.10.10.3</div>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => {
+                        updateSettings(draft);
+                        setSettings(getSettings());
+                        toast.success("Endpoint settings saved");
+                        // Trigger reconnect with new settings
+                        setMode(getMode());
+                      }}
+                      className="flex-1 rounded-lg bg-amv-maroon/30 border border-amv-maroon/40 px-2 py-1 text-[11px] font-medium hover:bg-amv-maroon/50 transition-colors"
+                    >
+                      Save & Reconnect
+                    </button>
+                    <button
+                      onClick={() => {
+                        updateSettings({ hybridHost: "", offlineHost: "" });
+                        const defaults = getSettings();
+                        setDraft(defaults);
+                        setSettings(defaults);
+                        toast.info("Endpoint settings reset to defaults");
+                        setMode(getMode());
+                      }}
+                      className="rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[11px] hover:bg-white/10 transition-colors"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                </div>
+                );
+              })()}
+            </div>
 
             {/* Test connection */}
             <button
